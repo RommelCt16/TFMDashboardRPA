@@ -1,0 +1,275 @@
+:root {
+  --bg-main: #0f1117;
+  --panel-bg: #1f2230;
+  --accent: #00fff7;
+  --text: #ffffff;
+  --border-radius: 8px;
+  --font: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  --transition: 0.3s;
+}
+
+/* Reset básico */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: var(--font);
+}
+
+/* Fondo general */
+body {
+  background: var(--bg-main);
+  color: var(--text);
+  margin: 0;
+  height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ===========================
+   SIDEBAR
+   =========================== */
+
+/* Sidebar colapsado por defecto (60px), fijo a la izquierda */
+#sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 60px;                  /* ancho colapsado */
+  height: 100vh;
+  background: #1a1d24;
+  transition: width var(--transition) ease;
+  overflow: hidden;
+  padding: 20px 0;              /* padding vertical */
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Se expande al pasar el ratón */
+#sidebar:hover {
+  width: 240px;
+}
+
+
+/* Iconos del sidebar */
+#sidebar .icon {
+  font-size: 1.6rem;
+  color: var(--accent);
+}
+
+/* ===== Menú lateral ===== */
+
+.side-menu {
+  list-style: none;
+  padding: 0;
+  width: 100%;
+}
+
+#sidebar .side-menu li a {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;   /* SIEMPRE a la izquierda */
+  gap: 10px;
+  padding: 12px 20px;
+  width: 100%;
+  color: #ccc;
+  text-decoration: none;
+  border-radius: var(--border-radius);
+  transition: background var(--transition), color var(--transition);
+}
+
+/* Hover / activo */
+.side-menu li a:hover,
+.side-menu li a.active {
+  background: #00fff73a;
+  color: var(--accent);
+}
+
+#sidebar .brand {
+  font-size: 1.2rem;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;   /* SIEMPRE a la izquierda */
+  width: 100%;
+  gap: 10px;
+  margin-bottom: 30px;
+  white-space: nowrap;
+  overflow: hidden;
+  padding: 0 20px;
+}
+
+/* Texto del menú: transición suave al expandirse */
+#sidebar .brand span,
+#sidebar .side-menu li a span {
+  display: inline-block;
+  white-space: nowrap;
+  max-width: 0;                 /* no ocupa espacio cuando está colapsado */
+  opacity: 0;
+  overflow: hidden;
+  transform: translateX(-8px);
+  transition:
+    max-width var(--transition) ease,
+    opacity var(--transition) ease,
+    transform var(--transition) ease;
+}
+
+/* Al expandirse el sidebar, el texto se revela suavemente */
+#sidebar:hover .brand span,
+#sidebar:hover .side-menu li a span {
+  max-width: 180px;
+  opacity: 1;
+  transform: translateX(0);
+}
+
+
+/* ===========================
+   CONTENIDO PRINCIPAL
+   =========================== */
+
+#content {
+  margin-left: 60px;            /* coincide con el ancho colapsado */
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 30px;
+  overflow-y: auto;
+  transition: margin-left var(--transition) ease;
+  background: var(--bg-main);
+}
+
+/* Cuando el sidebar se expande por hover, el contenido se corre a 240px */
+#sidebar:hover + #content {
+  margin-left: 240px;
+}
+
+/* ===========================
+   ELEMENTOS GENERALES
+   =========================== */
+
+nav {
+  margin-bottom: 30px;
+}
+
+.titulo {
+  font-size: 2rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Botones */
+button {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  padding: 8px 14px;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+button:hover {
+  background: #00c9c0;
+}
+
+/* Spinner de carga */
+.spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  border: 5px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  z-index: 100;
+}
+
+.hidden {
+  display: none;
+}
+
+/* Filtros y campos de entrada */
+select,
+input[type="date"],
+input[type="month"],
+input[type="text"] {
+  padding: 10px 14px;
+  border: 1px solid rgba(0, 200, 255, 0.7);
+  box-shadow: 0 0 5px rgba(0, 200, 255, 0.4);
+  border-radius: 8px;
+  background: #12141c;
+  color: #fff;
+  min-width: 160px;
+  transition: all 0.25s ease;
+  outline: none;
+  cursor: pointer;
+}
+
+/* Hover */
+select:hover,
+input:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 8px rgba(0, 255, 247, 0.7);
+}
+
+/* Focus */
+select:focus,
+input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 10px rgba(0, 255, 247, 0.9);
+}
+
+/* ===========================
+   COLORES POR ESTADO
+   =========================== */
+
+.success {
+  color: #28a745;
+  text-shadow: 0 0 6px #28a745;
+}
+
+.failure {
+  color: #dc3545;
+  text-shadow: 0 0 6px #dc3545;
+}
+
+.running {
+  color: #ffc107;
+  text-shadow: 0 0 6px #ffc107;
+}
+
+.incompleto {
+  color: #ff9800;
+  text-shadow: 0 0 6px #ff9800;
+}
+
+.timeout {
+  color: #6f42c1;
+  text-shadow: 0 0 6px #6f42c1;
+}
+
+.encola {
+  color: #17a2b8;
+  text-shadow: 0 0 6px #17a2b8;
+}
+
+.desconocido {
+  color: #6c757d;
+  text-shadow: 0 0 6px #6c757d;
+}
+
+/* ===========================
+   ANIMACIONES
+   =========================== */
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

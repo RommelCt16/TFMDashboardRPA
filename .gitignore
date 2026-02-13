@@ -1,0 +1,96 @@
+############################
+# 🔹 PYTHON (Backend)
+############################
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.env/
+.venv/
+env/
+
+# Environment variables
+.env
+.env.*
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+
+# SQLite databases
+*.sqlite3
+
+############################
+# 🔹 NODE / REACT (Frontend)
+############################
+
+# Dependencies
+node_modules/
+
+# Production build
+dist/
+build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+############################
+# 🔹 VITE
+############################
+vite.svg
+
+############################
+# 🔹 IDE / EDITORS
+############################
+
+# VSCode
+.vscode/
+
+# JetBrains
+.idea/
+
+############################
+# 🔹 OS FILES
+############################
+
+# Mac
+.DS_Store
+
+# Windows
+Thumbs.db
+
+############################
+# 🔹 DOCKER (si luego lo usas)
+############################
+docker-compose.override.yml
+
+############################
+# 🔹 TESTING / COVERAGE
+############################
+coverage/
+htmlcov/
+.pytest_cache/
+
+############################
+# 🔹 Kafka / Temp files
+############################
+*.kafka
+*.tmp
+*.bak
