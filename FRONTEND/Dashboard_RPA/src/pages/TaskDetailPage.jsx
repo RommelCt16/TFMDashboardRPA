@@ -1,9 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { renderLineChart, renderDonutEfectividad } from "../d3/detailCharts";
 import { ESTADO_TEXTO, getEstadoInfo } from "../domain/statusMap";
 import { API_BASE_URL } from "../config";
 
+import Cabecera from "../components/Cabecera"
+import InfoTareaCard from "../components/Pagina Detalle Tarea/InfoTareaCard";
+import EficienciaCard from "../components/Pagina Detalle Tarea/EficienciaCard";
+import HistorialCard from "../components/Pagina Detalle Tarea/HistorialCard";
+import EventoSidebar from "../components/Pagina Detalle Tarea/EventoSidebar";
+
+import "../styles/taskdetailpage.css";
+
+const LAST_TASK_DETAIL_KEY = "lastTaskDetail";
 
 function TaskDetailPage() {
   const { constructId, instanceId } = useParams();
@@ -17,11 +26,13 @@ function TaskDetailPage() {
   const [fechaFin, setFechaFin] = useState("");
   const [estadoFiltro, setEstadoFiltro] = useState("");
 
-  const lineContainerRef = useRef(null);
-  const gaugeRef = useRef(null);
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const [rightCollapsed, setRightCollapsed] = useState(true);
+
+  const lineContainerRef = useRef(null);
+  const gaugeRef = useRef(null);
 
   // Carga del historial de la tarea
   useEffect(() => {
@@ -52,304 +63,153 @@ function TaskDetailPage() {
             setEstadoTareaActual(data[0]);
           }
         }
+        else {
+          setEstadoTareaActual(null);
+        }
       })
       .catch((err) => {
         console.error("Error al cargar historial:", err);
         setError("No se pudo cargar el historial de la tarea.");
         setHistorial([]);
+        setEstadoTareaActual(null);
       })
       .finally(() => {
         setLoading(false);
       });
   }, [constructId, instanceId]);
 
-  // Recalcular gráficos cuando cambien datos o filtros
+
+  const historialFiltrado = useMemo(() => {
+    if (!historial || historial.length === 0) return [];
+    if (!fechaInicio && !fechaFin && !estadoFiltro) return historial;
+
+    const inicioDate = fechaInicio ? new Date(fechaInicio) : null;
+    const finDate = fechaFin ? new Date(fechaFin + "T23:59:59") : null;
+
+    return historial.filter((d) => {
+      const f = new Date(d.StartDateTime);
+      const code = d.Status ?? d.ResultCode;
+      const okEstado = !estadoFiltro || code === parseInt(estadoFiltro, 10);
+      const okFecha = (!inicioDate || f >= inicioDate) && (!finDate || f <= finDate);
+      return okEstado && okFecha;
+    });
+  }, [historial, fechaInicio, fechaFin, estadoFiltro]);
+
+
+  // Recalcular graficos cuando cambien datos o filtros
   useEffect(() => {
-    if (!historial || historial.length === 0) return;
-
-    let filtrado = historial;
-
-    if (fechaInicio || fechaFin || estadoFiltro) {
-      const inicioDate = fechaInicio ? new Date(fechaInicio) : null;
-      const finDate = fechaFin
-        ? new Date(fechaFin + "T23:59:59")
-        : null;
-
-      filtrado = historial.filter((d) => {
-        const f = new Date(d.StartDateTime);
-        const okEstado =
-          !estadoFiltro ||
-          (d.Status ?? d.ResultCode) === parseInt(estadoFiltro);
-        const okFecha =
-          (!inicioDate || f >= inicioDate) &&
-          (!finDate || f <= finDate);
-        return okEstado && okFecha;
-      });
-    }
+    if (!historialFiltrado || historialFiltrado.length === 0) return;
 
     if (lineContainerRef.current) {
       renderLineChart(
         lineContainerRef.current,
-        filtrado,
+        historialFiltrado,
         ESTADO_TEXTO,
-        (eventoSeleccionado) => setDetalleEvento(eventoSeleccionado)
+        (eventoSeleccionado) => {
+          setDetalleEvento(eventoSeleccionado);
+          setRightCollapsed(false);
+        }
       );
     }
 
     if (gaugeRef.current) {
-      renderDonutEfectividad(
-        gaugeRef.current,
-        filtrado,
-        ESTADO_TEXTO
-      );
+      renderDonutEfectividad(gaugeRef.current, historialFiltrado);
     }
-  }, [historial, fechaInicio, fechaFin, estadoFiltro]);
+  }, [historialFiltrado]);
 
   const handleVolver = () => {
     navigate(-1);
   };
 
-  const renderEstadoSpan = (code) => {
+  const renderEstadoSpan = useCallback((code) => {
     const info = getEstadoInfo(code);
     return <span className={info.clase}>{info.texto}</span>;
-  };
+  }, []);
+
+
+  const taskName = estadoTareaActual?.ConstructName || "";
+
+  useEffect(() => {
+    if (!constructId || !instanceId) return;
+    const path = `/detalle/${constructId}/${instanceId}`;
+    localStorage.setItem(
+      LAST_TASK_DETAIL_KEY,
+      JSON.stringify({
+        constructId,
+        instanceId,
+        taskName,
+        path,
+      })
+    );
+  }, [constructId, instanceId, taskName]);
 
   return (
-    <>
-      <nav>
-        <h1 id="titulo-tarea" className="titulo">
-          📊 Detalle de Tarea{" "}
-          {estadoTareaActual
-            ? `: ${estadoTareaActual.ConstructName}`
-            : ""}
-        </h1>
-      </nav>
+    <div className="running-tasks-page">
+      <Cabecera title="Informacion del Proceso" subtitle="Descripcion general del rendimiento global del Sistema RPA" />
 
-      {loading && (
-        <p style={{ marginLeft: "1.5rem" }}>Cargando historial...</p>
-      )}
+      <main className="tdp-main">
+        <div className="tdp-body">
+          <div className="tdp-content custom-scrollbar">
+            <div className="tdp-page">
+              <div className="tdp-titleRow">
+                <div className="tdp-title">
+                  <span className="material-symbols-outlined tdp-titleIcon">
+                    terminal
+                  </span>
+                  <h2 className="tdp-h2">
+                    Detalle de Tarea{taskName ? `: ${taskName}` : ""}
+                  </h2>
+                </div>
+                <button className="tdp-btn" onClick={handleVolver} type="button">
+                  <span className="material-symbols-outlined tdp-btnIcon">
+                    arrow_back
+                  </span>
+                  Volver
+                </button>
+              </div>
+              {loading && (
+                <div className="tdp-banner glass">
+                  <p>Cargando historial...</p>
+                </div>
+              )}
+              {error && (
+                <div className="tdp-banner glass tdp-bannerError">
+                  <p>{error}</p>
+                </div>
+              )}
 
-      {error && (
-        <p style={{ marginLeft: "1.5rem", color: "#e57373" }}>{error}</p>
-      )}
-
-
-      <button
-        onClick={handleVolver}
-        style={{ margin: "0 0 1rem 1rem" }}
-      >
-        ⬅ Volver
-      </button>
-
-      <div className="dashboard">
-        {/* Estado actual de la tarea */}
-        <div className="card" id="estado-actual">
-          <h3>📝 Información de la Tarea</h3>
-          <div id="estado">
-            {!estadoTareaActual && (
-              <em>Cargando datos de la tarea...</em>
-            )}
-            {estadoTareaActual && (
-              <table>
-                <tbody>
-                  <tr>
-                    <td>
-                      <strong>📌 Estado:</strong>
-                    </td>
-                    <td>
-                      {renderEstadoSpan(
-                        estadoTareaActual.Status ??
-                          estadoTareaActual.ResultCode
-                      )}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>
-                      <strong>📅 Inicio:</strong>
-                    </td>
-                    <td>
-                      {new Date(
-                        estadoTareaActual.StartDateTime
-                      ).toLocaleString()}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>
-                      <strong>🏁 Fin:</strong>
-                    </td>
-                    <td>
-                      {estadoTareaActual.EndDateTime
-                        ? new Date(
-                            estadoTareaActual.EndDateTime
-                          ).toLocaleString()
-                        : "—"}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>
-                      <strong>⏱️ Duración:</strong>
-                    </td>
-                    <td>
-                      {estadoTareaActual.DurationSeconds ??
-                        estadoTareaActual.Duration ??
-                        "Desconocido"}{" "}
-                      segundos
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>
-                      <strong>🤖 Agente:</strong>
-                    </td>
-                    <td>
-                      {estadoTareaActual.AgentName ||
-                        "No disponible"}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>
-                      <strong>Workflow:</strong>
-                    </td>
-                    <td>
-                      {estadoTareaActual.Workflow ||
-                        "Desconocido"}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>
-                      <strong>Descripción:</strong>
-                    </td>
-                    <td>
-                      {estadoTareaActual.ResultText ||
-                        "Sin descripción"}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            )}
+              <div className="tdp-gridTop">
+                <InfoTareaCard estadoTareaActual={estadoTareaActual}
+                  renderEstadoSpan={renderEstadoSpan} />
+                <EficienciaCard gaugeRef={gaugeRef} />
+              </div>
+              <HistorialCard
+                fechaInicio={fechaInicio}
+                fechaFin={fechaFin}
+                estadoFiltro={estadoFiltro}
+                onFechaInicio={setFechaInicio}
+                onFechaFin={setFechaFin}
+                onEstadoFiltro={setEstadoFiltro}
+                lineContainerRef={lineContainerRef}
+                hasData={historialFiltrado.length > 0}
+              />
+            </div>
           </div>
-        </div>
-
-        {/* Donut de eficiencia */}
-        <div className="card" id="eficiencia-card">
-          <h3>🎯 Eficiencia</h3>
-          <svg id="gauge" ref={gaugeRef} />
-        </div>
-      </div>
-
-      {/* Historial y detalle del evento seleccionado */}
-      <div className="dashboard-wide">
-        <div className="card">
-          <h3>📈 Historial de Duración</h3>
-
-          <div className="filtros">
-            <label htmlFor="fecha-inicio">Desde:</label>
-            <input
-              type="date"
-              id="fecha-inicio"
-              value={fechaInicio}
-              onChange={(e) => setFechaInicio(e.target.value)}
-            />
-
-            <label htmlFor="fecha-fin">Hasta:</label>
-            <input
-              type="date"
-              id="fecha-fin"
-              value={fechaFin}
-              onChange={(e) => setFechaFin(e.target.value)}
-            />
-
-            <label htmlFor="estado-filtro">Estado:</label>
-            <select
-              id="estado-filtro"
-              value={estadoFiltro}
-              onChange={(e) => setEstadoFiltro(e.target.value)}
-            >
-              <option value="">Todos</option>
-              <option value="1">✅ Success</option>
-              <option value="2">❌ Failure</option>
-              <option value="3">⚠️ Incompleto</option>
-              <option value="7">⛔ Time Out</option>
-              <option value="11">⏳ En Cola</option>
-              <option value="12">🔄 En ejecución</option>
-              <option value="0">❓ Desconocido</option>
-            </select>
-          </div>
-
-          <div
-            id="grafico-linea-tarea"
-            className="chart-container"
-            ref={lineContainerRef}
+          <EventoSidebar
+            collapsed={rightCollapsed}
+            onToggle={(force) => {
+              if (force === true) return setRightCollapsed(false);
+              if (force === false) return setRightCollapsed(true);
+              setRightCollapsed((v) => !v);
+            }}
+            detalleEvento={detalleEvento}
+            estadoTexto={ESTADO_TEXTO}
           />
         </div>
-
-        <div className="card" id="info-evento-seleccionado">
-          <h3>📌 Evento seleccionado</h3>
-          <div id="detalle-evento">
-            {!detalleEvento && (
-              <em>
-                Selecciona un punto en la gráfica para ver más
-                detalles.
-              </em>
-            )}
-            {detalleEvento && (
-              <ul className="info-list">
-                <li>
-                  <span className="icon">📋</span>
-                  <strong>Estado:</strong>
-                  <span>
-                    {
-                      ESTADO_TEXTO[detalleEvento.status]
-                        ?.texto
-                    }
-                  </span>
-                </li>
-                <li>
-                  <span className="icon">🕒</span>
-                  <strong>Inicio:</strong>
-                  <span>
-                    {detalleEvento.time.toLocaleString()}
-                  </span>
-                </li>
-                <li>
-                  <span className="icon">🕒</span>
-                  <strong>Fin:</strong>
-                  <span>
-                    {detalleEvento.fin
-                      ? detalleEvento.fin.toLocaleString()
-                      : "—"}
-                  </span>
-                </li>
-                <li>
-                  <span className="icon">⏱️</span>
-                  <strong>Duración:</strong>
-                  <span>
-                    {detalleEvento.duration.toFixed(1)} s
-                  </span>
-                </li>
-                <li>
-                  <span className="icon">🤖</span>
-                  <strong>Agente:</strong>
-                  <span>{detalleEvento.agente}</span>
-                </li>
-                <li>
-                  <span className="icon">🧭</span>
-                  <strong>Workflow:</strong>
-                  <span>
-                    {detalleEvento.workflow ?? "Desconocido"}
-                  </span>
-                </li>
-                <li>
-                  <span className="icon">📝</span>
-                  <strong>Descripción:</strong>
-                  <span>{detalleEvento.text}</span>
-                </li>
-              </ul>
-            )}
-          </div>
-        </div>
-      </div>
-    </>
+      </main>
+    </div>
   );
 }
 
 export default TaskDetailPage;
+

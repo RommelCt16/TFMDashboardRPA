@@ -1,0 +1,57 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200");
+
+:root {
+    --primary: #06b6d4;
+    --background-dark: #0f172a;
+    --sidebar-dark: #1e293b;
+    --card-dark: #1e293b;
+    --slate-100: #f1f5f9;
+    --slate-400: #94a3b8;
+    --slate-500: #64748b;
+    --slate-600: #475569;
+    --slate-700: #334155;
+    --slate-800: #1e293b;
+    --text-primary: #ffffff;
+    --emerald-500: #10b981;
+    --red-500: #ef4444;
+    --font-sans: "Inter", sans-serif;
+    --t-fast: 150ms;
+    --t-base: 300ms;
+    --transition: 0.3s;
+    --sidebar-expanded: 16rem;   /* 256px */
+    --sidebar-collapsed: 5rem;   /* 80px */
+}
+
+/* Reset básico */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  display: flex;
+}
+
+body {
+    background-color: var(--background-dark);
+    color: var(--slate-100);
+    margin: 0;
+    height: 100vh;
+    overflow-x: hidden;
+}
+
+#content {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  transition: margin-left var(--transition) ease;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}

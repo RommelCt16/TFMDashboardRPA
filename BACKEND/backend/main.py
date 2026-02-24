@@ -30,19 +30,30 @@ engine = create_engine(f"mssql+pymssql://@{os.getenv('DB_SERVER', 'localhost')}/
 app = FastAPI()
 clients = set()
 loop = None
+consumer_thread = None
 
 @app.on_event("startup")
 async def on_startup():
-    global loop
+    global loop, consumer_thread
     loop = asyncio.get_running_loop()
     logging.info("✅ Event loop capturado en startup")
+    if consumer_thread is None or not consumer_thread.is_alive():
+        consumer_thread = threading.Thread(target=kafka_listener, daemon=True)
+        consumer_thread.start()
+        logging.info("🟢 Kafka listener iniciado")
         
 
 # CORS
+cors_origins = [o.strip() for o in os.getenv("CORS_ALLOW_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
+cors_allow_credentials = os.getenv("CORS_ALLOW_CREDENTIALS", "false").lower() == "true"
+if "*" in cors_origins and cors_allow_credentials:
+    logging.warning("CORS '*' con credenciales no es válido; desactivando credenciales.")
+    cors_allow_credentials = False
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_origins or ["http://localhost:5173"],
+    allow_credentials=cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -235,7 +246,7 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             await asyncio.sleep(60)
     except WebSocketDisconnect:
-        clients.remove(websocket)
+        clients.discard(websocket)
 
 
 # === 🧠 Función para enviar a todos los clientes conectados ===
@@ -247,7 +258,7 @@ async def broadcast(message: dict):
         except Exception:
             disconnected.append(ws)
     for ws in disconnected:
-        clients.remove(ws)
+        clients.discard(ws)
 
 
 ### KAFKA LISTENER ###
@@ -281,5 +292,3 @@ def kafka_listener():
             logging.warning("Loop no inicializado aún; mensaje Kafka ignorado temporalmente")
 
 
-# Lanzar consumidor Kafka en hilo separado
-threading.Thread(target=kafka_listener, daemon=True).start()

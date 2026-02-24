@@ -195,9 +195,8 @@ export function renderLineChart(
  * Dibuja el donut de efectividad (success vs otros)
  * @param {SVGElement} svgElement - elemento <svg> para el donut
  * @param {Array} rawData - datos de historial
- * @param {Object} estadoTexto - mapa de estados
  */
-export function renderDonutEfectividad(svgElement, rawData, estadoTexto) {
+export function renderDonutEfectividad(svgElement, rawData) {
   const svg = d3.select(svgElement);
   svg.selectAll("*").remove();
 

@@ -1,0 +1,68 @@
+.tic {
+  border-radius: 18px;
+  padding: 18px;
+}
+
+.tic__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.tic__headLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tic__icon { color: #22d3ee; }
+.tic__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.tic__loading {
+  color: #94a3b8;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.tic__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.tic__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  gap: 12px;
+}
+
+.tic__rowLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #94a3b8;
+  min-width: 170px;
+}
+
+.tic__rowIcon { font-size: 18px; }
+.tic__label { font-size: 12px; font-weight: 650; }
+
+.tic__rowRight { text-align: right; }
+.tic__mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 12px; }
+.tic__value { font-size: 12px; color: #e5e7eb; }
+.tic__mutedItalic { font-size: 12px; color: #94a3b8; font-style: italic; }
+
+.tic__status {
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+}
+

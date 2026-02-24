@@ -1,0 +1,39 @@
+.efc {
+  border-radius: 18px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.efc__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.efc__icon { color: #22d3ee; }
+.efc__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.efc__center {
+  display: grid;
+  place-items: center;
+}
+
+.efc__svg {
+  width: 260px;
+  height: 260px;
+}
+
+.efc__note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+  text-align: center;
+}

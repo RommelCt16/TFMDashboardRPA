@@ -170,9 +170,12 @@ export function construirGraficoEjecuciones(
     .attr("opacity", 0.85);
 
   // Tooltip simple
-  const tooltip = d3
-    .select(svgElement.parentNode)
+  const chartContainer = d3.select(svgElement.parentNode);
+  chartContainer.selectAll(".general-chart-tooltip").remove();
+
+  const tooltip = chartContainer
     .append("div")
+    .attr("class", "general-chart-tooltip")
     .style("position", "absolute")
     .style("pointer-events", "none")
     .style("padding", "6px 10px")

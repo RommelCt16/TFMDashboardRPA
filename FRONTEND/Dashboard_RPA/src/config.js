@@ -4,10 +4,14 @@ const API_HOST =
 const API_PORT =
   import.meta.env.VITE_API_PORT || "8000";
 
+const PAGE_PROTOCOL = window.location.protocol;
+const HTTP_PROTOCOL = PAGE_PROTOCOL === "https:" ? "https" : "http";
+const WS_PROTOCOL = PAGE_PROTOCOL === "https:" ? "wss" : "ws";
+
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
-  `http://${API_HOST}:${API_PORT}/api`;
+  `${HTTP_PROTOCOL}://${API_HOST}:${API_PORT}/api`;
 
 export const WS_BASE_URL =
   import.meta.env.VITE_WS_BASE_URL ||
-  `ws://${API_HOST}:${API_PORT}`;
+  `${WS_PROTOCOL}://${API_HOST}:${API_PORT}`;

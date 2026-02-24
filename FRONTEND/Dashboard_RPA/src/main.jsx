@@ -4,9 +4,8 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 
 // Estilos globales
-import "./styles/base.css";
-import "./styles/layout.css";
-import "./styles/detalle.css";
+import "./styles/global.css";
+
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   

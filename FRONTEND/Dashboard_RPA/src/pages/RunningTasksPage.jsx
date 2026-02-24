@@ -2,33 +2,72 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { WS_BASE_URL } from "../config";
 import { getEstadoInfo } from "../domain/statusMap";
+import Cabecera from "../components/Cabecera";
+import "../styles/running-tasks.css";
 
 const PAGE_SIZE = 10;
+const LAST_TASK_DETAIL_KEY = "lastTaskDetail";
+const DEFAULT_STATUS_FILTER = "12";
+const KNOWN_STATUS_CODES = new Set([1, 2, 3, 7, 11, 12]);
+
+function getStartDate(task) {
+  return task?.StartDateTime ?? task?.StartDate ?? null;
+}
+
+function getStartTimestamp(task) {
+  return new Date(getStartDate(task) || 0).getTime();
+}
+
+function getLiveDurationSeconds(task, nowTs) {
+  const baseDuration = Number(task?.DurationSeconds);
+  const safeBaseDuration = Number.isFinite(baseDuration) ? baseDuration : null;
+  const statusCode = getTaskStatusCode(task);
+
+  // Solo corre en vivo mientras la tarea sigue en ejecucion.
+  if (statusCode !== 12) {
+    return safeBaseDuration;
+  }
+
+  const startTs = getStartTimestamp(task);
+  if (!Number.isFinite(startTs) || startTs <= 0) {
+    return safeBaseDuration;
+  }
+
+  const elapsed = Math.max(0, Math.floor((nowTs - startTs) / 1000));
+  if (safeBaseDuration == null) return elapsed;
+  return Math.max(safeBaseDuration, elapsed);
+}
+
+function toNumericCode(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function getTaskStatusCode(task) {
+  const resultCode = toNumericCode(task?.ResultCode);
+  const statusCode = toNumericCode(task?.Status);
+
+  if (resultCode != null && KNOWN_STATUS_CODES.has(resultCode)) {
+    return resultCode;
+  }
+  if (statusCode != null && KNOWN_STATUS_CODES.has(statusCode)) {
+    return statusCode;
+  }
+  return resultCode ?? statusCode;
+}
 
 function RunningTasksPage() {
   const taskMapRef = useRef(new Map());
   const [tasks, setTasks] = useState([]);
   const [divisionFilter, setDivisionFilter] = useState("");
   const [nameFilter, setNameFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState(DEFAULT_STATUS_FILTER);
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [wsReady, setWsReady] = useState(false);
-
+  const [sortConfig, setSortConfig] = useState({ key: "StartDateTime", direction: "desc" });
+  const [nowTs, setNowTs] = useState(() => Date.now());
 
   const navigate = useNavigate();
-
-  // Helper: fecha consistente (snapshot trae StartDateTime; kafka a veces trae StartDate)
-  const getStartDate = (t) => t?.StartDateTime ?? t?.StartDate ?? null;
-
-  // Helper: ordena y refresca estado tasks desde el map
-  const refreshFromMap = () => {
-    const list = Array.from(taskMapRef.current.values()).sort((a, b) => {
-      const da = new Date(getStartDate(a) || 0).getTime();
-      const db = new Date(getStartDate(b) || 0).getTime();
-      return db - da;
-    });
-    setTasks(list);
-  };
 
   // Construimos lista de divisiones para el select
   const divisions = useMemo(() => {
@@ -43,7 +82,9 @@ function RunningTasksPage() {
   useEffect(() => {
     const ws = new WebSocket(`${WS_BASE_URL}/ws/instancias`);
 
-    ws.onopen = () => {console.log("[WS] abierto"); setWsReady(true); };
+    ws.onopen = () => {
+      console.log("[WS] abierto");
+    };
 
     ws.onmessage = (event) => {
       try {
@@ -73,7 +114,27 @@ function RunningTasksPage() {
 
         // 2) Updates individuales (Kafka)
         if (msg?.ConstructID) {
-          taskMapRef.current.set(msg.ConstructID, msg);
+          const prev = taskMapRef.current.get(msg.ConstructID) || null;
+          const incomingStart = getStartTimestamp(msg);
+          const prevStart = getStartTimestamp(prev);
+
+          // Ignorar eventos viejos por ConstructID (regla funcional: mas reciente por StartDateTime)
+          if (prev && incomingStart && prevStart && incomingStart < prevStart) {
+            return;
+          }
+
+          const merged = {
+            ...(prev || {}),
+            ...msg,
+          };
+
+          // Normalizar estado para que casos como ResultCode=-1 y Status=12 se muestren como "En ejecucion"
+          const normalizedStatus = getTaskStatusCode(merged);
+          if (normalizedStatus != null) {
+            merged.ResultCode = normalizedStatus;
+          }
+
+          taskMapRef.current.set(msg.ConstructID, merged);
 
           const list = Array.from(taskMapRef.current.values()).sort(
             (a, b) =>
@@ -84,7 +145,7 @@ function RunningTasksPage() {
           setTasks(list);
         }
       } catch (e) {
-        console.error("[WS] mensaje inválido:", e);
+        console.error("[WS] mensaje invalido:", e);
       }
     };
 
@@ -96,30 +157,78 @@ function RunningTasksPage() {
 
     ws.onclose = () => {
       console.warn("[WS] cerrado");
-      // Si se cerró antes del snapshot, no dejes loading infinito
+      // Si se cerro antes del snapshot, no dejes loading infinito
       setLoading(false);
     };
 
     return () => ws.close();
   }, []);
 
-  // Aplicar filtros por división y nombre
+  // Tick para refrescar la duracion en tiempo real de tareas en ejecucion.
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNowTs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  // Aplicar filtros por division y nombre
   const filteredTasks = useMemo(() => {
     const div = divisionFilter.toLowerCase();
     const text = nameFilter.toLowerCase();
 
-    return tasks.filter((t) => {
+    let filtered = tasks.filter((t) => {
       const carpeta = (t.SubCarpeta || "").toLowerCase();
       const nombre = (t.ConstructName || "").toLowerCase();
+      const instanceId = String(t.InstanceID || "").toLowerCase();
+      const agentName = (t.AgentName || "").toLowerCase();
+      const taskStatus = getTaskStatusCode(t);
 
       const byDivision = !div || carpeta === div;
-      const byName = !text || nombre.includes(text);
+      const byName =
+        !text ||
+        nombre.includes(text) ||
+        instanceId.includes(text) ||
+        agentName.includes(text);
+      const byStatus =
+        !statusFilter ||
+        taskStatus === parseInt(statusFilter, 10);
 
-      return byDivision && byName;
+      return byDivision && byName && byStatus;
     });
-  }, [tasks, divisionFilter, nameFilter]);
 
-  // Paginación
+    // Aplicar ordenamiento
+    if (sortConfig.key) {
+      filtered = [...filtered].sort((a, b) => {
+        let aVal, bVal;
+
+        if (sortConfig.key === "StartDateTime") {
+          aVal = new Date(getStartDate(a) || 0).getTime();
+          bVal = new Date(getStartDate(b) || 0).getTime();
+        } else if (sortConfig.key === "EndDateTime") {
+          aVal = new Date(a.EndDateTime || 0).getTime();
+          bVal = new Date(b.EndDateTime || 0).getTime();
+        } else if (sortConfig.key === "DurationSeconds") {
+          aVal = getLiveDurationSeconds(a, nowTs) ?? 0;
+          bVal = getLiveDurationSeconds(b, nowTs) ?? 0;
+        } else if (sortConfig.key === "ResultCode") {
+          aVal = getTaskStatusCode(a) ?? 0;
+          bVal = getTaskStatusCode(b) ?? 0;
+        } else {
+          aVal = String(a[sortConfig.key] || "").toLowerCase();
+          bVal = String(b[sortConfig.key] || "").toLowerCase();
+        }
+
+        if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
+        if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return filtered;
+  }, [tasks, divisionFilter, nameFilter, statusFilter, sortConfig, nowTs]);
+
+  // Paginacion
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / PAGE_SIZE));
   const pageTasks = filteredTasks.slice(
     (currentPage - 1) * PAGE_SIZE,
@@ -127,124 +236,288 @@ function RunningTasksPage() {
   );
 
   useEffect(() => {
-    // Cada vez que cambian los filtros, volvemos a la página 1
+    // Cada vez que cambian los filtros, volvemos a la pagina 1
     setCurrentPage(1);
-  }, [divisionFilter, nameFilter]);
+  }, [divisionFilter, nameFilter, statusFilter]);
+
+  const handleSort = (key) => {
+    setSortConfig((prev) => ({
+      key,
+      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc",
+    }));
+  };
+
+  const handleResetFilters = () => {
+    setDivisionFilter("");
+    setNameFilter("");
+    setStatusFilter(DEFAULT_STATUS_FILTER);
+    setSortConfig({ key: "StartDateTime", direction: "desc" });
+    setCurrentPage(1);
+  };
 
   const handlePrev = () => setCurrentPage((p) => Math.max(1, p - 1));
   const handleNext = () => setCurrentPage((p) => Math.min(totalPages, p + 1));
 
-  const handleVerDetalle = (instanceId, constructId) => {
-    navigate(`/detalle/${constructId}/${instanceId}`);
+  const handleVerDetalle = (instanceId, constructId, taskName) => {
+    const path = `/detalle/${constructId}/${instanceId}`;
+    localStorage.setItem(
+      LAST_TASK_DETAIL_KEY,
+      JSON.stringify({
+        constructId,
+        instanceId,
+        taskName: taskName || "",
+        path,
+      })
+    );
+    navigate(path);
   };
 
   const formatDate = (value) => {
-    if (!value) return "—";
+    if (!value) return "-";
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return String(value);
     return d.toLocaleString();
   };
 
+  const formatDuration = (seconds) => {
+    if (seconds == null) return "-";
+    const sec = parseInt(seconds);
+    if (isNaN(sec)) return String(seconds);
+    
+    const hours = Math.floor(sec / 3600);
+    const minutes = Math.floor((sec % 3600) / 60);
+    const secs = sec % 60;
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${secs}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${secs}s`;
+    } else {
+      return `${secs}s`;
+    }
+  };
+
+  const getSortClass = (key) => {
+    if (sortConfig.key !== key) return "sortable";
+    return sortConfig.direction === "asc" ? "sorted-asc" : "sorted-desc";
+  };
+
   return (
-    <>
-      <nav>
-        <h1 className="titulo">Tareas en Ejecución</h1>
-      </nav>
+    <div className="running-tasks-page">
+      <Cabecera title="Tareas en Ejecucion" subtitle="Monitorea las tareas activas de tus bots en tiempo real" />
+      <div className="running-tasks-main">
+        <div className="content-wrapper">
+          <div className="filters-panel-glass">
+            <div className="filter-group">
+              <label htmlFor="filtro-nombre">Buscar Tarea</label>
+              <div className="search-input-wrapper">
+                <svg className="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <path d="m21 21-4.35-4.35"></path>
+                </svg>
+                <input
+                  type="text"
+                  id="filtro-nombre"
+                  className="filter-input"
+                  placeholder="Buscar tarea por nombre, ID o bot..."
+                  value={nameFilter}
+                  onChange={(e) => setNameFilter(e.target.value)}
+                />
+              </div>
+            </div>
 
-      {loading && <div className="spinner" />}
+            <div className="filter-group">
+              <label htmlFor="filtro-carpeta">Division</label>
+              <div className="select-wrapper">
+                <svg className="select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+                <select
+                  id="filtro-carpeta"
+                  className="filter-input select-input"
+                  value={divisionFilter}
+                  onChange={(e) => setDivisionFilter(e.target.value)}
+                >
+                  <option value="">Todas las divisiones</option>
+                  {divisions.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+                <svg className="select-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </div>
+            </div>
 
-      <div className="filtro-tareas">
-        <label htmlFor="filtro-carpeta">🔎 Filtrar por División: </label>
-        <select
-          id="filtro-carpeta"
-          value={divisionFilter}
-          onChange={(e) => setDivisionFilter(e.target.value)}
-        >
-          <option value="">Todas</option>
-          {divisions.map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
-          ))}
-        </select>
+            <div className="filter-group">
+              <label htmlFor="filtro-estado">Estado</label>
+              <div className="select-wrapper">
+                <svg className="select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <circle cx="12" cy="12" r="9"></circle>
+                  <path d="M9 12l2 2 4-4"></path>
+                </svg>
+                <select
+                  id="filtro-estado"
+                  className="filter-input select-input"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                >
+                  <option value="">Todos los estados</option>
+                  <option value="12">En ejecucion</option>
+                  <option value="1">Success</option>
+                  <option value="2">Failure</option>
+                  <option value="7">Time Out</option>
+                  <option value="3">Incompleto</option>
+                  <option value="11">En Cola</option>
+                </select>
+                <svg className="select-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </div>
+            </div>
 
-        <label htmlFor="filtro-nombre" style={{ marginLeft: 20 }}>
-          🔎 Buscar Tarea:
-        </label>
-        <input
-          type="text"
-          id="filtro-nombre"
-          placeholder="Escribe parte del nombre..."
-          value={nameFilter}
-          onChange={(e) => setNameFilter(e.target.value)}
-        />
-      </div>
+            <div className="filter-actions">
+              <button
+                className="btn-modern btn-primary-modern"
+                type="button"
+                onClick={() => setCurrentPage(1)}
+              >
+                <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                </svg>
+                Aplicar Filtros
+              </button>
+              <button className="btn-modern btn-secondary-modern" onClick={handleResetFilters}>
+                <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2-8.83"></path>
+                </svg>
+                Reiniciar
+              </button>
+            </div>
+          </div>
 
-      <main>
-        <div className="table-container">
-          <table id="tabla-tareas">
-            <thead>
-              <tr>
-                <th>N.</th>
-                <th>Proceso</th>
-                <th>Inicio Proceso</th>
-                <th>Fin Proceso</th>
-                <th>Duración</th>
-                <th>Estado</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageTasks.map((t, idx) => {
-                const estado = getEstadoInfo(t.ResultCode);
-                const rowNumber = (currentPage - 1) * PAGE_SIZE + idx + 1;
-
-                return (
-                  <tr key={`${t.ConstructID}-${t.InstanceID}`}>
-                    <td>{rowNumber}</td>
-                    <td>{t.ConstructName}</td>
-                    <td>{formatDate(getStartDate(t))}</td>
-                    <td>{formatDate(t.EndDateTime)}</td>
-                    <td>{t.DurationSeconds ?? "—"}</td>
-                    <td>
-                      <span className={estado.clase}>{estado.texto}</span>
-                    </td>
-                    <td>
-                      <button
-                        onClick={() => handleVerDetalle(t.InstanceID, t.ConstructID)}
-                      >
-                        Ver
-                      </button>
-                    </td>
+          <div className="table-container-glass">
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead className="table-header">
+                  <tr>
+                    <th className="th-number">No.</th>
+                    <th className={`${getSortClass("ConstructName")}`} onClick={() => handleSort("ConstructName")}>
+                      Proceso
+                    </th>
+                    <th className={`${getSortClass("StartDateTime")}`} onClick={() => handleSort("StartDateTime")}>
+                      Hora Inicio
+                    </th>
+                    <th className={`${getSortClass("EndDateTime")}`} onClick={() => handleSort("EndDateTime")}>
+                      Hora Fin
+                    </th>
+                    <th className={`${getSortClass("DurationSeconds")}`} onClick={() => handleSort("DurationSeconds")}>
+                      Duracion
+                    </th>
+                    <th className={`${getSortClass("ResultCode")}`} onClick={() => handleSort("ResultCode")}>
+                      Estado
+                    </th>
+                    <th className="th-actions">Acciones</th>
                   </tr>
-                );
-              })}
+                </thead>
+                <tbody className="table-body">
+                  {loading && (
+                    <tr className="loading-row">
+                      <td colSpan={7}>
+                        <div className="loading-container">
+                          <div className="spinner-box">
+                            <div className="spinner-border"></div>
+                            <svg className="spinner-icon" viewBox="0 0 24 24">
+                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                            </svg>
+                          </div>
+                          <p className="loading-text">Sincronizando Tareas</p>
+                          <p className="loading-subtext">Recuperando datos de ejecucion...</p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
 
-              {pageTasks.length === 0 && (
-                <tr>
-                  <td colSpan={7} style={{ textAlign: "center" }}>
-                    {loading ? "Cargando tareas..." : "No hay tareas para mostrar."}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                  {!loading && pageTasks.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="empty-state">
+                        No hay tareas activas en este momento.
+                      </td>
+                    </tr>
+                  )}
 
-        <div className="page" id="paginacion">
-          <button onClick={handlePrev} disabled={currentPage === 1}>
-            ⏮ Anterior
-          </button>
-          <span id="pagina-actual">
-            Página {currentPage} de {totalPages}
-          </span>
-          <button onClick={handleNext} disabled={currentPage === totalPages}>
-            Siguiente ⏭
-          </button>
+                  {pageTasks.map((t, idx) => {
+                    const estado = getEstadoInfo(getTaskStatusCode(t));
+                    const rowNumber = (currentPage - 1) * PAGE_SIZE + idx + 1;
+
+                    return (
+                      <tr key={`${t.ConstructID}-${t.InstanceID}`}>
+                        <td className="td-number">{rowNumber}</td>
+                        <td className="td-text" title={t.ConstructName}>{t.ConstructName}</td>
+                        <td className="td-text">{formatDate(getStartDate(t))}</td>
+                        <td className="td-text">{formatDate(t.EndDateTime)}</td>
+                        <td className="td-text">{formatDuration(getLiveDurationSeconds(t, nowTs))}</td>
+                        <td className="td-status">
+                          <span className={`status-badge status-${estado.clase}`}>{estado.texto}</span>
+                        </td>
+                        <td className="td-actions">
+                          <button
+                            className="btn-action"
+                            onClick={() =>
+                              handleVerDetalle(
+                                t.InstanceID,
+                                t.ConstructID,
+                                t.ConstructName
+                              )
+                            }
+                          >
+                            Ver
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {!loading && (
+              <div className="table-footer">
+                <p className="pagination-info">
+                  Mostrando <span className="font-bold">{pageTasks.length}</span> de{" "}
+                  <span className="font-bold">{filteredTasks.length}</span> tareas activas
+                </p>
+                <div className="pagination-controls">
+                  <button
+                    className="btn-pagination"
+                    onClick={handlePrev}
+                    disabled={currentPage === 1}
+                  >
+                    <svg className="btn-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                    Anterior
+                  </button>
+                  <button
+                    className="btn-pagination"
+                    onClick={handleNext}
+                    disabled={currentPage === totalPages}
+                  >
+                    Siguiente
+                    <svg className="btn-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </main>
-    </>
+      </div>
+    </div>
   );
 }
 
 export default RunningTasksPage;
+
