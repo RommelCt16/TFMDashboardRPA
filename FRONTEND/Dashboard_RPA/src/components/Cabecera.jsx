@@ -1,4 +1,3 @@
-import React from "react";
 import "../styles/Cabecera.css";
 
 export default function Cabecera({title, subtitle, right}) {

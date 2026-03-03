@@ -1,22 +1,13 @@
-// src/d3/detailCharts.js
-import * as d3 from "d3";
+﻿import * as d3 from "d3";
 
 const parseFecha = d3.timeParse("%Y-%m-%dT%H:%M:%S.%L");
 
-/**
- * Dibuja el gráfico de línea de duración de ejecuciones de una tarea
- * @param {HTMLElement} containerEl - contenedor (div) donde se montará el svg
- * @param {Array} rawData - datos crudos de la API
- * @param {Object} estadoTexto - mapa de códigos de estado a {texto, clase}
- * @param {(evento: any) => void} onPointClick - callback al hacer clic en un punto
- */
 export function renderLineChart(
   containerEl,
   rawData,
   estadoTexto,
   onPointClick
 ) {
-  // Limpiamos cualquier gráfico previo
   d3.select(containerEl).selectAll("*").remove();
 
   if (!rawData || rawData.length === 0) {
@@ -37,26 +28,26 @@ export function renderLineChart(
     .append("g")
     .attr("transform", `translate(${margin.left},${margin.top})`);
 
-  // Transformar datos
   const data = rawData
     .map((d) => {
-      const inicio =
-        parseFecha(d.StartDateTime) || new Date(d.StartDateTime);
-      const fin =
-        d.EndDateTime && (parseFecha(d.EndDateTime) || new Date(d.EndDateTime));
-      if (!inicio || isNaN(inicio)) return null;
+      const inicio = parseFecha(d.StartDateTime) || new Date(d.StartDateTime);
+      const fin = d.EndDateTime && (parseFecha(d.EndDateTime) || new Date(d.EndDateTime));
+      if (!inicio || Number.isNaN(inicio.getTime())) return null;
 
-      const dur =
-        d.DurationSeconds ??
-        d.Duration ??
-        (fin ? (fin - inicio) / 1000 : 0);
+      const durationNum = Number(
+        d.DurationSeconds ?? d.Duration ?? (fin ? (fin - inicio) / 1000 : 0)
+      );
+      const duration = Number.isFinite(durationNum) ? durationNum : 0;
+
+      const statusNum = Number(d.Status ?? d.ResultCode ?? 0);
+      const status = Number.isFinite(statusNum) ? statusNum : 0;
 
       return {
         raw: d,
         time: inicio,
         fin: fin || null,
-        duration: dur,
-        status: d.Status ?? d.ResultCode ?? 0,
+        duration,
+        status,
         text: d.ResultText ?? "",
         agente: d.AgentName ?? "Desconocido",
         workflow: d.Workflow ?? null,
@@ -68,11 +59,10 @@ export function renderLineChart(
   if (data.length === 0) {
     d3.select(containerEl)
       .append("p")
-      .text("No hay datos válidos para mostrar.");
+      .text("No hay datos validos para mostrar.");
     return;
   }
 
-  // Escalas
   const xScale = d3
     .scaleTime()
     .domain(d3.extent(data, (d) => d.time))
@@ -89,11 +79,12 @@ export function renderLineChart(
   const xAxis = d3.axisBottom(xScale).ticks(6);
   const yAxis = d3.axisLeft(yScale).ticks(6);
 
-  // Ejes
-  svg
+  const xAxisG = svg
     .append("g")
     .attr("transform", `translate(0,${height})`)
-    .call(xAxis)
+    .call(xAxis);
+
+  xAxisG
     .append("text")
     .attr("x", width / 2)
     .attr("y", 40)
@@ -101,25 +92,39 @@ export function renderLineChart(
     .attr("text-anchor", "middle")
     .text("Fecha / Hora de inicio");
 
-  svg
+  const yAxisG = svg
     .append("g")
-    .call(yAxis)
+    .call(yAxis);
+
+  yAxisG
     .append("text")
     .attr("transform", "rotate(-90)")
     .attr("x", -height / 2)
     .attr("y", -50)
     .attr("fill", "currentColor")
     .attr("text-anchor", "middle")
-    .text("Duración (segundos)");
+    .text("Duracion (segundos)");
 
-  // Línea
   const line = d3
     .line()
     .x((d) => xScale(d.time))
     .y((d) => yScale(d.duration))
     .curve(d3.curveMonotoneX);
 
+  const clipId = `detail-line-clip-${Date.now()}`;
   svg
+    .append("defs")
+    .append("clipPath")
+    .attr("id", clipId)
+    .append("rect")
+    .attr("width", width)
+    .attr("height", height);
+
+  const chartLayer = svg
+    .append("g")
+    .attr("clip-path", `url(#${clipId})`);
+
+  const linePath = chartLayer
     .append("path")
     .datum(data)
     .attr("fill", "none")
@@ -127,18 +132,16 @@ export function renderLineChart(
     .attr("stroke-width", 1.5)
     .attr("d", line);
 
-  // Color por estado
   const colorEstado = (estado) => {
-    if (estado === 1) return "#2e7d32"; // success
-    if (estado === 2) return "#c62828"; // error
-    if (estado === 7) return "#f57c00"; // timeout
-    if (estado === 3) return "#fbc02d"; // incompleto
-    if (estado === 11) return "#1976d2"; // en cola
-    if (estado === 12) return "#7b1fa2"; // en ejecución
-    return "#757575"; // desconocido
+    if (estado === 1) return "#2e7d32";
+    if (estado === 2) return "#c62828";
+    if (estado === 7) return "#f57c00";
+    if (estado === 3) return "#fbc02d";
+    if (estado === 11) return "#1976d2";
+    if (estado === 12) return "#7b1fa2";
+    return "#757575";
   };
 
-  // Tooltip (como div absoluto dentro del contenedor)
   const tooltip = d3
     .select(containerEl)
     .append("div")
@@ -151,8 +154,7 @@ export function renderLineChart(
     .style("color", "#fff")
     .style("opacity", 0);
 
-  // Puntos
-  svg
+  const points = chartLayer
     .selectAll("circle")
     .data(data)
     .enter()
@@ -162,15 +164,14 @@ export function renderLineChart(
     .attr("r", 4)
     .attr("fill", (d) => colorEstado(d.status))
     .attr("opacity", 0.9)
-    .on("mouseenter", function (event, d) {
-      const estado =
-        estadoTexto[d.status]?.texto ?? "Desconocido";
+    .on("mouseenter", function (_event, d) {
+      const estado = estadoTexto[d.status]?.texto ?? "Desconocido";
       tooltip
         .style("opacity", 1)
         .html(
           `
           <strong>${estado}</strong><br/>
-          Duración: ${d.duration.toFixed(1)} s<br/>
+          Duracion: ${d.duration.toFixed(1)} s<br/>
           Inicio: ${d.time.toLocaleString()}
         `
         );
@@ -189,48 +190,89 @@ export function renderLineChart(
         onPointClick(d);
       }
     });
+
+  const zoom = d3
+    .zoom()
+    .scaleExtent([1, 20])
+    .extent([[0, 0], [width, height]])
+    .translateExtent([[0, 0], [width, height]])
+    .on("zoom", (event) => {
+      const zx = event.transform.rescaleX(xScale);
+      const zy = event.transform.rescaleY(yScale);
+
+      xAxisG.call(d3.axisBottom(zx).ticks(6));
+      yAxisG.call(d3.axisLeft(zy).ticks(6));
+
+      linePath.attr(
+        "d",
+        d3
+          .line()
+          .x((d) => zx(d.time))
+          .y((d) => zy(d.duration))
+          .curve(d3.curveMonotoneX)
+      );
+
+      points
+        .attr("cx", (d) => zx(d.time))
+        .attr("cy", (d) => zy(d.duration));
+    });
+
+  svg.call(zoom);
 }
 
-/**
- * Dibuja el donut de efectividad (success vs otros)
- * @param {SVGElement} svgElement - elemento <svg> para el donut
- * @param {Array} rawData - datos de historial
- */
-export function renderDonutEfectividad(svgElement, rawData) {
+function toNumeric(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function renderDonutEfectividad(svgElement, rawData, options = {}) {
+  const { mode = "mes", totals = null } = options;
   const svg = d3.select(svgElement);
   svg.selectAll("*").remove();
 
-  const width = 260;
-  const height = 260;
+  const width = 300;
+  const height = 300;
   const radius = Math.min(width, height) / 2;
 
   svg.attr("viewBox", `0 0 ${width} ${height}`);
 
   const g = svg
     .append("g")
-    .attr("transform", `translate(${width / 2},${height / 2})`);
+    .attr("transform", `translate(${width / 2},${height / 2 - 20})`);
 
-  if (!rawData || rawData.length === 0) {
+  let total = 0;
+  let successCount = 0;
+  let failureCount = 0;
+
+  if (mode === "total") {
+    const success = toNumeric(totals?.successCount) ?? 0;
+    const failure = toNumeric(totals?.failureCount) ?? 0;
+    successCount = Math.max(0, success);
+    failureCount = Math.max(0, failure);
+    total = successCount + failureCount;
+  } else {
+    const safeRaw = Array.isArray(rawData) ? rawData : [];
+    successCount = safeRaw.filter((d) => toNumeric(d?.ResultCode) === 1).length;
+    failureCount = safeRaw.filter((d) => toNumeric(d?.ResultCode) !== 1).length;
+    total = successCount + failureCount;
+  }
+
+  if (total === 0) {
     g.append("text")
       .attr("text-anchor", "middle")
+      .attr("fill", "#e2e8f0")
       .text("Sin datos");
     return;
   }
 
-  const total = rawData.length;
-  const successCount = rawData.filter(
-    (d) => (d.Status ?? d.ResultCode) === 1
-  ).length;
-  const otros = total - successCount;
-
   const data = [
     { key: "success", value: successCount },
-    { key: "otros", value: otros },
+    { key: "failure", value: failureCount },
   ];
 
   const color = d3
     .scaleOrdinal()
-    .domain(["success", "otros"])
+    .domain(["success", "failure"])
     .range(["#2e7d32", "#c62828"]);
 
   const pie = d3.pie().value((d) => d.value);
@@ -248,13 +290,12 @@ export function renderDonutEfectividad(svgElement, rawData) {
     .attr("stroke", "#121212")
     .attr("stroke-width", 1);
 
-  // Texto central (porcentaje éxito)
-  const porcentajeSuccess =
-    total > 0 ? ((successCount / total) * 100).toFixed(1) : 0;
+  const porcentajeSuccess = ((successCount / total) * 100).toFixed(1);
 
   g.append("text")
     .attr("text-anchor", "middle")
     .attr("y", -5)
+    .attr("fill", "#e2e8f0")
     .style("font-size", "24px")
     .style("font-weight", "bold")
     .text(`${porcentajeSuccess}%`);
@@ -262,33 +303,39 @@ export function renderDonutEfectividad(svgElement, rawData) {
   g.append("text")
     .attr("text-anchor", "middle")
     .attr("y", 18)
+    .attr("fill", "#cbd5e1")
     .style("font-size", "12px")
     .text("Éxito");
 
-  // Leyenda
-  const legend = svg
-    .append("g")
-    .attr("transform", `translate(${width / 2 - 60}, ${height - 40})`);
+  const legendItemWidth = 90;
+  const legend = g.append("g");
+  const legendMargin = 30;
+
+  legend.attr(
+    "transform",
+    `translate(${-(legendItemWidth * data.length - 40) / 2}, ${radius + legendMargin})`
+  );
 
   const items = legend
     .selectAll("g")
     .data(data)
     .enter()
     .append("g")
-    .attr("transform", (d, i) => `translate(${i * 80}, 0)`);
+    .attr("transform", (_d, i) => `translate(${i * legendItemWidth}, 0)`);
 
   items
     .append("rect")
     .attr("width", 12)
     .attr("height", 12)
+    .attr("y", -8)
     .attr("fill", (d) => color(d.key));
 
   items
     .append("text")
     .attr("x", 18)
-    .attr("y", 10)
+    .attr("y", -2)
+    .attr("dominant-baseline", "middle")
+    .attr("fill", "#cbd5e1")
     .style("font-size", "12px")
-    .text((d) =>
-      d.key === "success" ? "Success" : "Otros"
-    );
+    .text((d) => (d.key === "success" ? "Exito" : "Fallo"));
 }

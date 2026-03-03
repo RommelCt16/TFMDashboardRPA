@@ -11,8 +11,8 @@
 .running-tasks-main {
   flex: 1;
   overflow-y: auto;
-  padding: 32px;
   background: var(--background-dark);
+  padding: 20px;
 }
 
 .running-tasks-main::-webkit-scrollbar {
@@ -395,29 +395,19 @@
   border-color: rgba(59, 130, 246, 0.2);
 }
 
-.status-paused {
-  background: rgba(168, 85, 247, 0.1);
-  color: #a855f7;
-  border-color: rgba(168, 85, 247, 0.2);
-}
-
-.status-error,
-.status-failed {
+.status-failure {
   background: rgba(239, 68, 68, 0.1);
   color: var(--red-500);
   border-color: rgba(239, 68, 68, 0.2);
 }
 
-.status-warning {
+.status-desconocido,
+.status-incompleto,
+.status-encola,
+.status-timeout {
   background: rgba(245, 158, 11, 0.1);
   color: #f59e0b;
   border-color: rgba(245, 158, 11, 0.2);
-}
-
-.status-pending {
-  background: rgba(100, 116, 139, 0.1);
-  color: var(--slate-400);
-  border-color: rgba(100, 116, 139, 0.2);
 }
 
 /* ===== ACTION BUTTONS ===== */
@@ -544,12 +534,6 @@
   color: var(--text-primary);
 }
 
-.pagination-timestamp {
-  font-size: 0.75rem;
-  color: var(--slate-600);
-  margin: 0;
-}
-
 .pagination-controls {
   display: flex;
   gap: 8px;
@@ -581,75 +565,4 @@
   cursor: not-allowed;
 }
 
-/* ===== RESPONSIVE DESIGN ===== */
-@media (max-width: 1024px) {
-  .running-tasks-main {
-    padding: 24px;
-  }
-
-  .filters-panel-glass {
-    grid-template-columns: repeat(2, minmax(220px, 1fr));
-  }
-
-  .filter-actions {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
-  }
-}
-
-@media (max-width: 768px) {
-  .running-tasks-main {
-    padding: 24px 16px;
-  }
-
-  .filters-panel-glass {
-    padding: 16px;
-    gap: 12px;
-    grid-template-columns: 1fr;
-  }
-
-  .filter-group {
-    width: 100%;
-  }
-
-  .filter-actions {
-    width: 100%;
-    justify-content: stretch;
-  }
-
-  .btn-modern {
-    flex: 1;
-    justify-content: center;
-  }
-
-  .table-header th,
-  .table-body td {
-    padding: 12px 14px;
-    font-size: 0.8125rem;
-  }
-
-  .table-footer {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
-  .pagination-timestamp {
-    display: block;
-  }
-}
-
-@media (max-width: 640px) {
-  .running-tasks-page {
-    height: auto;
-  }
-
-  .filter-group {
-    width: 100%;
-  }
-
-  .data-table {
-    min-width: 860px;
-    font-size: 0.8125rem;
-  }
-}
+/* Diseno orientado a escritorio/laptop */

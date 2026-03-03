@@ -391,6 +391,23 @@
   font-size: 0.95rem;
 }
 
+/* Permite que "Ultimo detalle: <tarea>" no se corte al expandir el sidebar por hover */
+#sidebar.collapsed:hover .nav-link-last-detail .nav-text {
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: normal;
+  line-height: 1.25;
+  display: block;
+  overflow: visible;
+  text-overflow: clip;
+  transition: none;
+  transform: none;
+}
+
+#sidebar.collapsed .nav-link-last-detail .nav-text {
+  transition: none;
+}
+
 /* ===== Sidebar Footer ===== */
 .sidebar-footer {
   padding: 1rem; /* p-4 */
@@ -398,77 +415,9 @@
   flex-shrink: 0;
 }
 
-/* Theme Toggle Button */
-.theme-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem; /* gap-3 */
-  width: 100%;
-  padding: 0.75rem; /* px-3 py-3 */
-  color: var(--slate-400);
-  background-color: transparent;
-  border: none;
-  border-radius: 0.75rem; /* rounded-xl */
-  cursor: pointer;
-  transition: all 150ms ease; /* transition-all */
-  font-family: inherit;
-  font-size: 0.95rem;
-  font-weight: 500;
-}
-
-.theme-btn:hover {
-  background-color: var(--slate-800); /* hover:bg-slate-800 */
-  color: var(--text-primary); /* hover:text-white */
-}
-
-.theme-btn span.material-symbols-outlined {
-  font-size: 1.375rem; /* text-[22px] */
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-
-/* ===== Responsive Design ===== */
-@media (max-width: 768px) {
-  #sidebar {
-    position: fixed;
-    left: 0;
-    top: 0;
-    height: 100vh;
-    width: 16rem;
-    transform: translateX(-100%);
-    z-index: 1000;
-    transition: transform 300ms ease;
-  }
-
-  #sidebar.collapsed {
-    width: 16rem;
-    transform: translateX(0);
-  }
-
-#sidebar.collapsed .sidebar-title,
-#sidebar.collapsed .nav-text {
-    display: inline;
-  }
-}
-
 /* ===== Dark Mode Support ===== */
 .dark {
   color-scheme: dark;
-}
-
-.light {
-  --background-dark: #f8f9fa;
-  --sidebar-dark: #ffffff;
-  --slate-100: #1e293b;
-  --slate-400: #64748b;
-  --slate-500: #94a3b8;
-  --slate-600: #cbd5e1;
-  --slate-700: #e2e8f0;
-  --slate-800: #f1f5f9;
-  --text-primary: #000000;
 }
 
 .light #sidebar {
@@ -527,4 +476,9 @@
 
 #sidebar.collapsed:hover .alerts-collapsed-metrics {
   display: none;
+}
+
+/* Cuando el sidebar colapsado se expande por hover, permitir ver el panel de alertas */
+#sidebar.collapsed:hover .alerts-panel {
+  display: flex;
 }

@@ -1,18 +1,17 @@
 // src/components/Sidebar.jsx
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { WS_BASE_URL } from "../config";
 import { getEstadoInfo } from "../domain/statusMap";
+import { useInstancesStream } from "../context/InstancesStreamContext";
 import "../styles/sidebar.css";
-import "boxicons/css/boxicons.min.css";
 
 const LAST_TASK_DETAIL_KEY = "lastTaskDetail";
-const THEME_STORAGE_KEY = "theme";
 const ALERTS_ENABLED_KEY = "errorAlertsEnabled";
 const ALERTS_HISTORY_KEY = "alertsHistory";
 const ALERTS_UNREAD_KEY = "alertsUnread";
 const MAX_ALERTS_HISTORY = 200;
 const FAILURE_CODES = new Set([2, 3, 7]);
+const SIDEBAR_DEFAULT_CLASS = "sidebar collapsed";
 
 function getResultCode(task) {
   const code = task?.ResultCode ?? task?.Status ?? null;
@@ -32,22 +31,16 @@ function formatAlertDateTime(value) {
   return d.toLocaleString();
 }
 
-function applyTheme(theme) {
-  const isDark = theme === "dark";
-  document.documentElement.classList.toggle("dark", isDark);
-  document.documentElement.classList.toggle("light", !isDark);
-  localStorage.setItem(THEME_STORAGE_KEY, theme);
-  return isDark;
+function applyDarkTheme() {
+  document.documentElement.classList.add("dark");
+  document.documentElement.classList.remove("light");
 }
 
 function Sidebar() {
+  const { lastUpdate } = useInstancesStream();
   const location = useLocation();
   const navigate = useNavigate();
-  const taskMapRef = useRef(new Map());
-  const instanceToConstructRef = useRef(new Map());
   const notifiedFailuresRef = useRef(new Set());
-  const [isDarkMode, setIsDarkMode] = useState(true);
-  const [isCollapsed] = useState(true);
   const [lastTaskDetail, setLastTaskDetail] = useState(null);
   const [alertsEnabled, setAlertsEnabled] = useState(
     localStorage.getItem(ALERTS_ENABLED_KEY) !== "false"
@@ -65,9 +58,7 @@ function Sidebar() {
   const browserNotificationsSupported = typeof window !== "undefined" && "Notification" in window;
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) || "dark";
-    const isDark = applyTheme(savedTheme);
-    setIsDarkMode(isDark);
+    applyDarkTheme();
   }, []);
 
   useEffect(() => {
@@ -150,7 +141,7 @@ function Sidebar() {
     }
 
     const notification = new Notification("Dashboard RPA - Error detectado", {
-      body: `${taskName} (${instanceId})`,
+      body: `${taskName}`,
       tag: `task-error-${instanceId}`,
       requireInteraction: true,
     });
@@ -165,69 +156,19 @@ function Sidebar() {
     if (alertsEnabledRef.current && browserNotificationsSupported && Notification.permission === "default") {
       Notification.requestPermission().catch(() => {});
     }
+  }, [browserNotificationsSupported]);
 
-    const ws = new WebSocket(`${WS_BASE_URL}/ws/instancias`);
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
+  useEffect(() => {
+    const merged = lastUpdate?.task;
+    if (!merged) return;
+    if (!alertsEnabledRef.current || !isFailure(merged)) return;
 
-        if (msg?.tipo === "snapshot" && Array.isArray(msg.items)) {
-          const map = new Map();
-          const byInstance = new Map();
-          for (const t of msg.items) {
-            if (t?.ConstructID) map.set(t.ConstructID, t);
-            if (t?.ConstructID && t?.InstanceID) {
-              byInstance.set(String(t.InstanceID), t.ConstructID);
-            }
-          }
-          taskMapRef.current = map;
-          instanceToConstructRef.current = byInstance;
-          return;
-        }
+    const instanceKey = String(merged.InstanceID || "");
+    if (!instanceKey || notifiedFailuresRef.current.has(instanceKey)) return;
 
-        let constructId = msg?.ConstructID;
-        const instanceId = msg?.InstanceID ? String(msg.InstanceID) : "";
-
-        if (!constructId && instanceId) {
-          constructId = instanceToConstructRef.current.get(instanceId);
-        }
-
-        if (constructId && instanceId) {
-          instanceToConstructRef.current.set(instanceId, constructId);
-        }
-
-        const prev = constructId ? (taskMapRef.current.get(constructId) || {}) : {};
-        const merged = { ...prev, ...msg };
-        if (constructId && !merged.ConstructID) {
-          merged.ConstructID = constructId;
-        }
-
-        if (constructId) {
-          taskMapRef.current.set(constructId, merged);
-        }
-
-        if (merged?.InstanceID && merged?.ConstructID) {
-          instanceToConstructRef.current.set(String(merged.InstanceID), merged.ConstructID);
-        }
-
-        if (!alertsEnabledRef.current || !isFailure(merged)) {
-          return;
-        }
-
-        const instanceKey = String(merged.InstanceID || "");
-        if (!instanceKey || notifiedFailuresRef.current.has(instanceKey)) {
-          return;
-        }
-
-        notifiedFailuresRef.current.add(instanceKey);
-        pushAlert(merged);
-      } catch (e) {
-        console.error("[Sidebar WS] mensaje invalido:", e);
-      }
-    };
-
-    return () => ws.close();
-  }, [browserNotificationsSupported, pushAlert]);
+    notifiedFailuresRef.current.add(instanceKey);
+    pushAlert(merged);
+  }, [lastUpdate, pushAlert]);
 
   useEffect(() => {
     alertsOpenRef.current = alertsOpen;
@@ -246,12 +187,6 @@ function Sidebar() {
       filteredAlerts: filtered,
     };
   }, [alerts, alertFilter]);
-
-  const toggleTheme = () => {
-    const newTheme = !isDarkMode ? "dark" : "light";
-    const isDark = applyTheme(newTheme);
-    setIsDarkMode(isDark);
-  };
 
   const toggleAlertsEnabled = () => {
     const next = !alertsEnabled;
@@ -279,7 +214,7 @@ function Sidebar() {
     <>
       <aside
         id="sidebar"
-        className={`sidebar ${isCollapsed ? "collapsed" : ""}`}
+        className={SIDEBAR_DEFAULT_CLASS}
       >
         <div className="sidebar-header">
           <div className="sidebar-logo">
@@ -297,7 +232,7 @@ function Sidebar() {
             }
           >
             <span className="material-symbols-outlined">dashboard</span>
-            <span className="nav-text">Tareas en Ejecucion</span>
+            <span className="nav-text">Tareas en Ejecución</span>
           </NavLink>
 
           <NavLink
@@ -314,7 +249,7 @@ function Sidebar() {
             <NavLink
               to={lastTaskDetail.path}
               className={({ isActive }) =>
-                `nav-link ${isActive ? "active" : ""}`
+                `nav-link nav-link-last-detail ${isActive ? "active" : ""}`
               }
             >
               <span className="material-symbols-outlined">history</span>
@@ -392,7 +327,7 @@ function Sidebar() {
                   <div key={a.id} className={`alerts-item ${a.reviewStatus === "resolved" ? "resolved" : "pending"}`}>
                     <span className="alerts-item-title">{a.taskName}</span>
                     <span className="alerts-item-meta">
-                      {a.stateLabel} | {a.instanceId}
+                      {a.stateLabel}
                     </span>
                     <span className="alerts-item-time">{formatAlertDateTime(a.timestamp)}</span>
                     <div className="alerts-item-actions">
@@ -432,52 +367,10 @@ function Sidebar() {
           ) : null}
         </section>
 
-        <div className="sidebar-footer">
-          <button className="theme-btn" onClick={toggleTheme}>
-            <span className="material-symbols-outlined">
-              {isDarkMode ? "light_mode" : "dark_mode"}
-            </span>
-            <span className="nav-text">
-              {isDarkMode ? "Light Mode" : "Dark Mode"}
-            </span>
-          </button>
-        </div>
+        <div className="sidebar-footer" />
       </aside>
     </>
   );
 }
  
 export default Sidebar;
-
-
-/*
-function Sidebar() {
-  return (
-    <section id="sidebar">
-      <NavLink to="/" className="brand">
-        <i className="bx bxs-bot icon" />
-        <span>Dashboard RPA</span>
-      </NavLink>
-
-      <ul className="side-menu">
-        <li>
-          <NavLink to="/" end>
-            <i className="bx bxs-dashboard icon" />
-            <span>Tareas en Ejecucion</span>
-          </NavLink>
-        </li>
-        <li>
-          <NavLink to="/general">
-            <i className="bx bxs-bar-chart-alt-2 icon" />
-            <span>Dashboard de Tareas</span>
-          </NavLink>
-        </li>
-      </ul>
-    </section>
-  );
-}
-
-export default Sidebar;
-
-*/
-

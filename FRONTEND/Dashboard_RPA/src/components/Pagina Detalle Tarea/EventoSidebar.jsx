@@ -1,5 +1,4 @@
-import "../../styles/eventoSidebar.css"
-
+import "../../styles/eventoSidebar.css";
 
 export default function EventoSidebar({ collapsed, onToggle, detalleEvento, estadoTexto }) {
   const icon = collapsed ? "chevron_left" : "chevron_right";
@@ -38,26 +37,25 @@ export default function EventoSidebar({ collapsed, onToggle, detalleEvento, esta
                 <div className="res__placeholderIcon">
                   <span className="material-symbols-outlined">touch_app</span>
                 </div>
-                <p className="res__placeholderTitle">Sin selección</p>
+                <p className="res__placeholderTitle">Sin seleccion</p>
                 <p className="res__placeholderText">
-                  Interactúa con los puntos de la gráfica para ver información específica de la ejecución.
+                  Interactua con los puntos de la grafica para ver informacion especifica de la ejecucion.
                 </p>
               </div>
             ) : (
               <div className="res__panel">
                 <div className="res__runBox">
-                  <div className="res__runLabel">ID Ejecución</div>
-                  <div className="res__runValue">#{detalleEvento.raw?.InstanceID ?? "N/D"}</div>
+                  <div className="res__runLabel">Descripcion</div>
+                  <div className="res__runValue">{detalleEvento.text || "Sin descripcion"}</div>
                 </div>
 
                 <div className="res__rows">
                   <Row label="Estado Final" value={estadoLabel} />
-                  <Row label="Duración Total" value={`${detalleEvento.duration.toFixed(1)} segundos`} />
+                  <Row label="Duracion Total" value={`${detalleEvento.duration.toFixed(1)} segundos`} />
                   <Row label="Agente" value={detalleEvento.agente} />
-                  <Row label="Inicio" value={detalleEvento.time?.toLocaleString?.() ?? "—"} />
-                  <Row label="Fin" value={detalleEvento.fin ? detalleEvento.fin.toLocaleString() : "—"} />
+                  <Row label="Inicio" value={detalleEvento.time?.toLocaleString?.() ?? "-"} />
+                  <Row label="Fin" value={detalleEvento.fin ? detalleEvento.fin.toLocaleString() : "-"} />
                   <Row label="Workflow" value={detalleEvento.workflow ?? "Desconocido"} />
-                  <Row label="Descripción" value={detalleEvento.text || "Sin descripción"} />
                 </div>
               </div>
             )}

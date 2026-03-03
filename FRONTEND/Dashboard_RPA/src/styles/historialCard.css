@@ -36,13 +36,6 @@
   margin-bottom: 14px;
 }
 
-@media (max-width: 900px) {
-  .hsc__filters {
-    grid-template-columns: 1fr;
-  }
-  .hsc__field--wide { grid-column: auto; }
-}
-
 .hsc__field {
   display: flex;
   flex-direction: column;
@@ -64,6 +57,20 @@
   color: #e5e7eb;
   border: 1px solid rgba(148, 163, 184, 0.16);
   outline: none;
+}
+
+.hsc__select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  line-height: 1.2;
+  padding-right: 30px;
+  cursor: pointer;
+}
+
+.hsc__select option {
+  color: #e5e7eb;
+  background: #0b1220;
 }
 
 .hsc__input:focus {

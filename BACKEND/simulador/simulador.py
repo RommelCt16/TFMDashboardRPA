@@ -280,7 +280,7 @@ def simular_ejecucion():
 
         #GLOBALES
         now = datetime.now()
-        duration = random.randint(20, 180)
+        duration = random.randint(100, 180)
         transaction_id = str(uuid.uuid4())
 
         # Se genera SIEMPRE un workflow_instance_id por corrida
@@ -533,6 +533,7 @@ def simular_ejecucion():
         # Kafka summary (task)
         producer.send("rpa-instance-summary", {
             "InstanceID": task_instance_id,
+            "ConstructID": task_id,
             "ConstructName": task_name,
             "StartDateTime": now,
             "EndDateTime": end_time,

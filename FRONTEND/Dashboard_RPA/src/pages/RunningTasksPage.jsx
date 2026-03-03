@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { WS_BASE_URL } from "../config";
 import { getEstadoInfo } from "../domain/statusMap";
 import Cabecera from "../components/Cabecera";
+import { useInstancesStream } from "../context/InstancesStreamContext";
 import "../styles/running-tasks.css";
 
 const PAGE_SIZE = 10;
@@ -12,10 +12,6 @@ const KNOWN_STATUS_CODES = new Set([1, 2, 3, 7, 11, 12]);
 
 function getStartDate(task) {
   return task?.StartDateTime ?? task?.StartDate ?? null;
-}
-
-function getStartTimestamp(task) {
-  return new Date(getStartDate(task) || 0).getTime();
 }
 
 function getLiveDurationSeconds(task, nowTs) {
@@ -28,7 +24,7 @@ function getLiveDurationSeconds(task, nowTs) {
     return safeBaseDuration;
   }
 
-  const startTs = getStartTimestamp(task);
+  const startTs = new Date(getStartDate(task) || 0).getTime();
   if (!Number.isFinite(startTs) || startTs <= 0) {
     return safeBaseDuration;
   }
@@ -57,19 +53,16 @@ function getTaskStatusCode(task) {
 }
 
 function RunningTasksPage() {
-  const taskMapRef = useRef(new Map());
-  const [tasks, setTasks] = useState([]);
+  const { tasks, loading } = useInstancesStream();
   const [divisionFilter, setDivisionFilter] = useState("");
   const [nameFilter, setNameFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState(DEFAULT_STATUS_FILTER);
   const [currentPage, setCurrentPage] = useState(1);
-  const [loading, setLoading] = useState(true);
   const [sortConfig, setSortConfig] = useState({ key: "StartDateTime", direction: "desc" });
   const [nowTs, setNowTs] = useState(() => Date.now());
 
   const navigate = useNavigate();
 
-  // Construimos lista de divisiones para el select
   const divisions = useMemo(() => {
     const setDiv = new Set();
     tasks.forEach((t) => {
@@ -78,93 +71,6 @@ function RunningTasksPage() {
     return Array.from(setDiv).sort();
   }, [tasks]);
 
-  // WebSocket: snapshot + updates
-  useEffect(() => {
-    const ws = new WebSocket(`${WS_BASE_URL}/ws/instancias`);
-
-    ws.onopen = () => {
-      console.log("[WS] abierto");
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-
-        // 1) Snapshot inicial
-        if (msg?.tipo === "snapshot" && Array.isArray(msg.items)) {
-          const map = new Map();
-          for (const t of msg.items) {
-            if (t?.ConstructID) map.set(t.ConstructID, t);
-          }
-          taskMapRef.current = map;
-
-          const list = Array.from(map.values()).sort(
-            (a, b) =>
-              new Date(b.StartDateTime ?? b.StartDate).getTime() -
-              new Date(a.StartDateTime ?? a.StartDate).getTime()
-          );
-
-          setTasks(list);
-
-          // ✅ Ya llegó el primer snapshot
-          setLoading(false);
-          return;
-        }
-
-
-        // 2) Updates individuales (Kafka)
-        if (msg?.ConstructID) {
-          const prev = taskMapRef.current.get(msg.ConstructID) || null;
-          const incomingStart = getStartTimestamp(msg);
-          const prevStart = getStartTimestamp(prev);
-
-          // Ignorar eventos viejos por ConstructID (regla funcional: mas reciente por StartDateTime)
-          if (prev && incomingStart && prevStart && incomingStart < prevStart) {
-            return;
-          }
-
-          const merged = {
-            ...(prev || {}),
-            ...msg,
-          };
-
-          // Normalizar estado para que casos como ResultCode=-1 y Status=12 se muestren como "En ejecucion"
-          const normalizedStatus = getTaskStatusCode(merged);
-          if (normalizedStatus != null) {
-            merged.ResultCode = normalizedStatus;
-          }
-
-          taskMapRef.current.set(msg.ConstructID, merged);
-
-          const list = Array.from(taskMapRef.current.values()).sort(
-            (a, b) =>
-              new Date(b.StartDateTime ?? b.StartDate).getTime() -
-              new Date(a.StartDateTime ?? a.StartDate).getTime()
-          );
-
-          setTasks(list);
-        }
-      } catch (e) {
-        console.error("[WS] mensaje invalido:", e);
-      }
-    };
-
-    ws.onerror = (err) => {
-      console.error("[WS] error:", err);
-      // Si falla el WS, quitamos loading para que no quede infinito
-      setLoading(false);
-    };
-
-    ws.onclose = () => {
-      console.warn("[WS] cerrado");
-      // Si se cerro antes del snapshot, no dejes loading infinito
-      setLoading(false);
-    };
-
-    return () => ws.close();
-  }, []);
-
-  // Tick para refrescar la duracion en tiempo real de tareas en ejecucion.
   useEffect(() => {
     const intervalId = window.setInterval(() => {
       setNowTs(Date.now());
@@ -172,10 +78,10 @@ function RunningTasksPage() {
     return () => window.clearInterval(intervalId);
   }, []);
 
-  // Aplicar filtros por division y nombre
   const filteredTasks = useMemo(() => {
     const div = divisionFilter.toLowerCase();
     const text = nameFilter.toLowerCase();
+    const statusCodeFilter = statusFilter ? Number(statusFilter) : null;
 
     let filtered = tasks.filter((t) => {
       const carpeta = (t.SubCarpeta || "").toLowerCase();
@@ -191,16 +97,16 @@ function RunningTasksPage() {
         instanceId.includes(text) ||
         agentName.includes(text);
       const byStatus =
-        !statusFilter ||
-        taskStatus === parseInt(statusFilter, 10);
+        statusCodeFilter == null ||
+        taskStatus === statusCodeFilter;
 
       return byDivision && byName && byStatus;
     });
 
-    // Aplicar ordenamiento
     if (sortConfig.key) {
       filtered = [...filtered].sort((a, b) => {
-        let aVal, bVal;
+        let aVal;
+        let bVal;
 
         if (sortConfig.key === "StartDateTime") {
           aVal = new Date(getStartDate(a) || 0).getTime();
@@ -228,7 +134,6 @@ function RunningTasksPage() {
     return filtered;
   }, [tasks, divisionFilter, nameFilter, statusFilter, sortConfig, nowTs]);
 
-  // Paginacion
   const totalPages = Math.max(1, Math.ceil(filteredTasks.length / PAGE_SIZE));
   const pageTasks = filteredTasks.slice(
     (currentPage - 1) * PAGE_SIZE,
@@ -236,7 +141,6 @@ function RunningTasksPage() {
   );
 
   useEffect(() => {
-    // Cada vez que cambian los filtros, volvemos a la pagina 1
     setCurrentPage(1);
   }, [divisionFilter, nameFilter, statusFilter]);
 
@@ -281,9 +185,9 @@ function RunningTasksPage() {
 
   const formatDuration = (seconds) => {
     if (seconds == null) return "-";
-    const sec = parseInt(seconds);
+    const sec = parseInt(seconds, 10);
     if (isNaN(sec)) return String(seconds);
-    
+
     const hours = Math.floor(sec / 3600);
     const minutes = Math.floor((sec % 3600) / 60);
     const secs = sec % 60;
@@ -304,7 +208,7 @@ function RunningTasksPage() {
 
   return (
     <div className="running-tasks-page">
-      <Cabecera title="Tareas en Ejecucion" subtitle="Monitorea las tareas activas de tus bots en tiempo real" />
+      <Cabecera title="Tareas en Ejecución" subtitle="Monitorea las tareas activas de tus bots en tiempo real" />
       <div className="running-tasks-main">
         <div className="content-wrapper">
           <div className="filters-panel-glass">
@@ -327,7 +231,7 @@ function RunningTasksPage() {
             </div>
 
             <div className="filter-group">
-              <label htmlFor="filtro-carpeta">Division</label>
+              <label htmlFor="filtro-carpeta">División</label>
               <div className="select-wrapper">
                 <svg className="select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                   <path d="M13 10V3L4 14h7v7l9-11h-7z"></path>
@@ -363,7 +267,7 @@ function RunningTasksPage() {
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
                   <option value="">Todos los estados</option>
-                  <option value="12">En ejecucion</option>
+                  <option value="12">En ejecución</option>
                   <option value="1">Success</option>
                   <option value="2">Failure</option>
                   <option value="7">Time Out</option>
@@ -377,16 +281,6 @@ function RunningTasksPage() {
             </div>
 
             <div className="filter-actions">
-              <button
-                className="btn-modern btn-primary-modern"
-                type="button"
-                onClick={() => setCurrentPage(1)}
-              >
-                <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-                </svg>
-                Aplicar Filtros
-              </button>
               <button className="btn-modern btn-secondary-modern" onClick={handleResetFilters}>
                 <svg className="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                   <polyline points="23 4 23 10 17 10"></polyline>
@@ -413,7 +307,7 @@ function RunningTasksPage() {
                       Hora Fin
                     </th>
                     <th className={`${getSortClass("DurationSeconds")}`} onClick={() => handleSort("DurationSeconds")}>
-                      Duracion
+                      Duración
                     </th>
                     <th className={`${getSortClass("ResultCode")}`} onClick={() => handleSort("ResultCode")}>
                       Estado
@@ -520,4 +414,3 @@ function RunningTasksPage() {
 }
 
 export default RunningTasksPage;
-

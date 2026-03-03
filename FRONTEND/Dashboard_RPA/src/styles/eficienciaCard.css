@@ -10,8 +10,15 @@
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 10px;
+}
+
+.efc__headTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .efc__icon { color: #22d3ee; }
@@ -24,15 +31,99 @@
 .efc__center {
   display: grid;
   place-items: center;
+  height: 300px;
+}
+
+.efc__toggle {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(2, 6, 23, 0.35);
+}
+
+.efc__toggleBtn {
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.efc__toggleBtn.active {
+  background: rgba(34, 211, 238, 0.2);
+  color: #a5f3fc;
+}
+
+.efc__monthRow {
+  width: 100%;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.efc__monthLabel {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.efc__monthSelect {
+  width: 100%;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(2, 6, 23, 0.35);
+  color: #e5e7eb;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  outline: none;
+}
+
+.efc__monthSelect:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .efc__svg {
   width: 260px;
-  height: 260px;
+  height: 300px;
+}
+
+.efc__counts {
+  display: flex;
+  gap: 30px;
+}
+
+.efc__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.efc__chip.success {
+  color: #bbf7d0;
+  border-color: rgba(16, 185, 129, 0.45);
+  background: rgba(16, 185, 129, 0.16);
+}
+
+.efc__chip.failure {
+  color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.16);
 }
 
 .efc__note {
-  margin: 10px 0 0;
+  margin: 20px 0 0;
   font-size: 12px;
   color: #94a3b8;
   text-align: center;

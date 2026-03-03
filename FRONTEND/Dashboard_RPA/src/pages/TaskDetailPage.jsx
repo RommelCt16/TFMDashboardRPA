@@ -14,6 +14,21 @@ import "../styles/taskdetailpage.css";
 
 const LAST_TASK_DETAIL_KEY = "lastTaskDetail";
 
+function toMonthKey(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${month}`;
+}
+
+function formatMonthLabel(monthKey) {
+  if (!monthKey) return "";
+  const [year, month] = monthKey.split("-");
+  const d = new Date(Number(year), Number(month) - 1, 1);
+  if (Number.isNaN(d.getTime())) return monthKey;
+  return d.toLocaleDateString("es-ES", { month: "long", year: "numeric" });
+}
+
 function TaskDetailPage() {
   const { constructId, instanceId } = useParams();
   const navigate = useNavigate();
@@ -28,20 +43,33 @@ function TaskDetailPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [eficienciaModo, setEficienciaModo] = useState("total");
+  const [mesSeleccionado, setMesSeleccionado] = useState("");
 
   const [rightCollapsed, setRightCollapsed] = useState(true);
 
   const lineContainerRef = useRef(null);
   const gaugeRef = useRef(null);
 
+  const totalCounts = useMemo(() => {
+    const base = estadoTareaActual || historial[0] || null;
+    const success = Number(base?.SuccessCount ?? 0);
+    const failure = Number(base?.FailureCount ?? 0);
+    return {
+      successCount: Number.isFinite(success) ? success : 0,
+      failureCount: Number.isFinite(failure) ? failure : 0,
+    };
+  }, [estadoTareaActual, historial]);
+
   // Carga del historial de la tarea
   useEffect(() => {
     if (!constructId) return;
+    const constructIdClean = String(constructId).replace(/[{}]/g, "");
 
     setLoading(true);
     setError("");
 
-    fetch(`${API_BASE_URL}/historial_construct/${constructId}`)
+    fetch(`${API_BASE_URL}/historial_construct/${constructIdClean}`)
       .then((r) => {
         if (!r.ok) {
           throw new Error(`Error ${r.status}`);
@@ -95,10 +123,67 @@ function TaskDetailPage() {
     });
   }, [historial, fechaInicio, fechaFin, estadoFiltro]);
 
+  const mesesDisponibles = useMemo(() => {
+    const setMeses = new Set();
+    historial.forEach((d) => {
+      const key = toMonthKey(d?.StartDateTime);
+      if (key) setMeses.add(key);
+    });
+    return Array.from(setMeses).sort((a, b) => (a < b ? 1 : -1));
+  }, [historial]);
+
+  useEffect(() => {
+    if (!mesesDisponibles.length) {
+      setMesSeleccionado("");
+      return;
+    }
+    if (!mesSeleccionado || !mesesDisponibles.includes(mesSeleccionado)) {
+      setMesSeleccionado(mesesDisponibles[0]);
+    }
+  }, [mesesDisponibles, mesSeleccionado]);
+
+  const historialMes = useMemo(() => {
+    if (!mesSeleccionado) return [];
+    return historial.filter((d) => toMonthKey(d?.StartDateTime) === mesSeleccionado);
+  }, [historial, mesSeleccionado]);
+
+  const mesCounts = useMemo(() => {
+    const safeRaw = Array.isArray(historialMes) ? historialMes : [];
+    const successCount = safeRaw.filter((d) => Number(d?.ResultCode) === 1).length;
+    const failureCount = safeRaw.filter((d) => Number(d?.ResultCode) !== 1).length;
+    return { successCount, failureCount };
+  }, [historialMes]);
+
+  const eficienciaNota = useMemo(() => {
+    if (eficienciaModo === "total") {
+      return "Total de Tareas";
+    }
+    if (!mesSeleccionado) {
+      return "Mes: no hay meses disponibles para calcular estadisticas.";
+    }
+    return `Tareas del Mes ${formatMonthLabel(mesSeleccionado)}`;
+  }, [eficienciaModo, mesSeleccionado]);
+
 
   // Recalcular graficos cuando cambien datos o filtros
   useEffect(() => {
-    if (!historialFiltrado || historialFiltrado.length === 0) return;
+    if (gaugeRef.current) {
+      if (eficienciaModo === "total") {
+        renderDonutEfectividad(gaugeRef.current, [], {
+          mode: "total",
+          totals: totalCounts,
+        });
+      } else {
+        renderDonutEfectividad(gaugeRef.current, historialMes, {
+          mode: "mes",
+        });
+      }
+    }
+
+    if (!historialFiltrado || historialFiltrado.length === 0) {
+      setDetalleEvento(null);
+      return;
+    }
 
     if (lineContainerRef.current) {
       renderLineChart(
@@ -112,10 +197,7 @@ function TaskDetailPage() {
       );
     }
 
-    if (gaugeRef.current) {
-      renderDonutEfectividad(gaugeRef.current, historialFiltrado);
-    }
-  }, [historialFiltrado]);
+  }, [historialFiltrado, historialMes, eficienciaModo, totalCounts]);
 
   const handleVolver = () => {
     navigate(-1);
@@ -145,7 +227,7 @@ function TaskDetailPage() {
 
   return (
     <div className="running-tasks-page">
-      <Cabecera title="Informacion del Proceso" subtitle="Descripcion general del rendimiento global del Sistema RPA" />
+      <Cabecera title="Información de la Tarea" subtitle="Estadísticas de la tarea seleccionada" />
 
       <main className="tdp-main">
         <div className="tdp-body">
@@ -181,7 +263,16 @@ function TaskDetailPage() {
               <div className="tdp-gridTop">
                 <InfoTareaCard estadoTareaActual={estadoTareaActual}
                   renderEstadoSpan={renderEstadoSpan} />
-                <EficienciaCard gaugeRef={gaugeRef} />
+                <EficienciaCard
+                  gaugeRef={gaugeRef}
+                  mode={eficienciaModo}
+                  onModeChange={setEficienciaModo}
+                  monthOptions={mesesDisponibles}
+                  selectedMonth={mesSeleccionado}
+                  onSelectedMonthChange={setMesSeleccionado}
+                  counts={eficienciaModo === "total" ? totalCounts : mesCounts}
+                  noteText={eficienciaNota}
+                />
               </div>
               <HistorialCard
                 fechaInicio={fechaInicio}

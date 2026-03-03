@@ -1,5 +1,4 @@
-import "../../styles/historialCard.css"
-
+﻿import "../../styles/historialCard.css";
 
 export default function HistoryCard({
   fechaInicio,
@@ -45,18 +44,18 @@ export default function HistoryCard({
         <div className="hsc__field hsc__field--wide">
           <label className="hsc__label">Estado</label>
           <select
-            className="hsc__input"
+            className="hsc__input hsc__select"
             value={estadoFiltro}
             onChange={(e) => onEstadoFiltro(e.target.value)}
           >
             <option value="">Todos</option>
-            <option value="1">✅ Success</option>
-            <option value="2">❌ Failure</option>
-            <option value="3">⚠️ Incompleto</option>
-            <option value="7">⛔ Time Out</option>
-            <option value="11">⏳ En Cola</option>
-            <option value="12">🔄 En ejecución</option>
-            <option value="0">❓ Desconocido</option>
+            <option value="1">Success</option>
+            <option value="2">Failure</option>
+            <option value="3">Incompleto</option>
+            <option value="7">Time Out</option>
+            <option value="11">En Cola</option>
+            <option value="12">En ejecución</option>
+            <option value="0">Desconocido</option>
           </select>
         </div>
       </div>

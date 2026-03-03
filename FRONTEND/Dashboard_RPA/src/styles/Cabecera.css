@@ -41,35 +41,4 @@
   gap: 12px;
 }
 
-/* ===== RESPONSIVE SOLO HEADER ===== */
-@media (max-width: 1024px) {
-  .running-tasks-header {
-    padding: 0 24px;
-  }
-}
-
-@media (max-width: 768px) {
-  .running-tasks-header {
-    height: 56px;
-    padding: 0 16px;
-  }
-
-  .header-title-group h2 {
-    font-size: 1.125rem;
-  }
-}
-
-@media (max-width: 640px) {
-  .running-tasks-header {
-    flex-direction: column;
-    align-items: flex-start;
-    height: auto;
-    padding: 16px;
-    gap: 12px;
-  }
-
-  .header-right {
-    width: 100%;
-    justify-content: flex-start;
-  }
-}
+/* Header pensado para escritorio/laptop */

@@ -1,6 +1,5 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
+﻿from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 from kafka import KafkaConsumer
 from dotenv import load_dotenv
@@ -12,7 +11,7 @@ import asyncio
 import threading
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 load_dotenv()
 
@@ -24,30 +23,49 @@ logging.basicConfig(
 
 # Crear el motor de SQLAlchemy con pymssql
 # Para localhost: mssql+pymssql://@localhost/DB_NAME
-# O con usuario: mssql+pymssql://usuario:contraseña@localhost/DB_NAME
+# O con usuario: mssql+pymssql://usuario:contraseÃ±a@localhost/DB_NAME
 engine = create_engine(f"mssql+pymssql://@{os.getenv('DB_SERVER', 'localhost')}/{os.getenv('DB_NAME')}")
 
 app = FastAPI()
 clients = set()
 loop = None
 consumer_thread = None
+stop_event = threading.Event()
+kafka_consumer = None
 
 @app.on_event("startup")
 async def on_startup():
     global loop, consumer_thread
     loop = asyncio.get_running_loop()
-    logging.info("✅ Event loop capturado en startup")
+    stop_event.clear()
+    logging.info("Event loop capturado en startup")
     if consumer_thread is None or not consumer_thread.is_alive():
         consumer_thread = threading.Thread(target=kafka_listener, daemon=True)
         consumer_thread.start()
-        logging.info("🟢 Kafka listener iniciado")
-        
+        logging.info("Kafka listener iniciado")
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    global loop, consumer_thread, kafka_consumer
+    stop_event.set()
+    try:
+        if kafka_consumer is not None:
+            kafka_consumer.close()
+    except Exception:
+        logging.exception("Error cerrando Kafka consumer")
+
+    if consumer_thread is not None and consumer_thread.is_alive():
+        consumer_thread.join(timeout=3)
+
+    kafka_consumer = None
+    consumer_thread = None
+    loop = None
 
 # CORS
 cors_origins = [o.strip() for o in os.getenv("CORS_ALLOW_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
 cors_allow_credentials = os.getenv("CORS_ALLOW_CREDENTIALS", "false").lower() == "true"
 if "*" in cors_origins and cors_allow_credentials:
-    logging.warning("CORS '*' con credenciales no es válido; desactivando credenciales.")
+    logging.warning("CORS '*' con credenciales no es vÃ¡lido; desactivando credenciales.")
     cors_allow_credentials = False
 
 app.add_middleware(
@@ -60,26 +78,17 @@ app.add_middleware(
 
 ###  RUTAS DE FRONTEND  ###
 
-# Servir archivos estáticos desde la carpeta "static"
-#app.mount("/static", StaticFiles(directory="./static"), name="static")
+# Servir archivos estÃ¡ticos desde la carpeta "static"
 # Servir index.html cuando acceden a "/"
 @app.get("/")
 async def root():
-    #Ejecutar producer.py cada vez que se carga la página
+    # Endpoint de estado base del backend.
     return JSONResponse(
         content={
             "status": "ok",
             "message": "Backend RPA Dashboard activo",
         }
     )
-
-@app.get("/general")
-async def dashboard_general():
-    return FileResponse(os.path.join("static", "general.html"))
-
-@app.get("/detalle.html")
-async def detalle():
-    return FileResponse(os.path.join("static", "detalle.html"))
 
 # Servir favicon.ico si existe
 @app.get("/favicon.ico")
@@ -90,17 +99,19 @@ async def favicon():
 
 ###  API REST   ###
 
-# API para consultar tareas, filtrando por día o mes
+# API para consultar tareas, filtrando por dÃ­a o mes
 @app.get("/api/todas_las_tareas")
 async def todas_las_tareas(request: Request):
     try:
-        # Leer parámetros de consulta
+        # Leer parÃ¡metros de consulta
         params = request.query_params
         dia = params.get("dia")
+        semana = params.get("semana")
         mes = params.get("mes")
+        logging.info("Filtro recibido /api/todas_las_tareas -> dia=%s semana=%s mes=%s", dia, semana, mes)
 
-        # Si no se pasa ningún parámetro, se filtra por el día actual
-        if not dia and not mes:
+        # Si no se pasa ningÃºn parÃ¡metro, se filtra por el dÃ­a actual
+        if not dia and not semana and not mes:
             dia = datetime.now().strftime("%Y-%m-%d")
 
         # Consulta base
@@ -114,9 +125,13 @@ async def todas_las_tareas(request: Request):
             ISNULL(i.Duration, DATEDIFF(SECOND, i.StartDateTime, i.EndDateTime)) AS DurationSeconds,
             i.ResultCode,
             i.ResultText,
+            i.AgentName,
+            iw.ConstructName AS Workflow,
             i.ConstructPath
         FROM instances i
         LEFT JOIN automateconstructs ac ON i.ConstructID = ac.ResourceID
+        LEFT JOIN instances iw
+          ON CONVERT(varchar(64), iw.InstanceID) = CONVERT(varchar(64), i.WorkflowInstanceId)
         WHERE ac.ResourceType = 2
           AND ac.CompletionState = 2
           AND i.ConstructPath LIKE :ruta_procesos
@@ -129,9 +144,47 @@ async def todas_las_tareas(request: Request):
         if dia:
             query += " AND CONVERT(DATE, i.StartDateTime) = :dia"
             params_sql["dia"] = dia
+            logging.info("Aplicando filtro DIA: %s", dia)
+        elif semana:
+            # Parse robusto para formato de input[type=week]: YYYY-Www
+            try:
+                semana_value = semana.strip().upper()
+                if "-W" in semana_value:
+                    year_str, week_str = semana_value.split("-W")
+                    week_start = datetime.fromisocalendar(int(year_str), int(week_str), 1).date()
+                else:
+                    # Fallback si el browser envía fecha (YYYY-MM-DD) en lugar de week.
+                    fallback_date = datetime.strptime(semana_value, "%Y-%m-%d").date()
+                    week_start = fallback_date - timedelta(days=fallback_date.isoweekday() - 1)
+            except Exception:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Formato de semana invalido. Use YYYY-Www (ej. 2026-W10)."
+                )
+            week_end = week_start + timedelta(days=7)
+            query += " AND i.StartDateTime >= :week_start AND i.StartDateTime < :week_end"
+            params_sql["week_start"] = week_start
+            params_sql["week_end"] = week_end
+            logging.info("Aplicando filtro SEMANA: %s -> [%s, %s)", semana, week_start, week_end)
         elif mes:
-            query += " AND FORMAT(i.StartDateTime, 'yyyy-MM') = :mes"
-            params_sql["mes"] = mes
+            # Filtrado mensual por rango para evitar problemas de formato y mejorar rendimiento.
+            try:
+                month_start = datetime.strptime(f"{mes}-01", "%Y-%m-%d").date()
+            except Exception:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Formato de mes invalido. Use YYYY-MM (ej. 2026-03)."
+                )
+
+            if month_start.month == 12:
+                month_end = month_start.replace(year=month_start.year + 1, month=1, day=1)
+            else:
+                month_end = month_start.replace(month=month_start.month + 1, day=1)
+
+            query += " AND i.StartDateTime >= :month_start AND i.StartDateTime < :month_end"
+            params_sql["month_start"] = month_start
+            params_sql["month_end"] = month_end
+            logging.info("Aplicando filtro MES: %s -> [%s, %s)", mes, month_start, month_end)
 
         query += " ORDER BY i.StartDateTime DESC"
 
@@ -141,44 +194,65 @@ async def todas_las_tareas(request: Request):
 
         return results
 
+    except HTTPException:
+        raise
     except Exception:
         logging.exception("Error en /api/todas_las_tareas")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
-# Endpoint de historial por ID de instancia
 @app.get("/api/historial_construct/{construct_id}")
-async def historial_por_construct(construct_id: str):
+async def historial_construct(construct_id: str):
     try:
+        construct_id_clean = str(construct_id).strip().strip("{}").lower()
+        if not construct_id_clean:
+            raise HTTPException(status_code=422, detail="construct_id invalido")
+
         query = """
-            SELECT 
-                i.InstanceID,
-                i.ConstructName,
-                i.StartDateTime,
-                i.EndDateTime,
-                i.ResultText,
-                i.Duration,
-                ac.SuccessCount, 
-                ac.FailureCount,
-                iw.ConstructName AS Workflow,
-                iw.ConstructPath AS PathWorkflow,
-                i.AgentName,
-                i.Status
-            FROM instances i
-            LEFT JOIN automateconstructs ac ON i.ConstructID = ac.ResourceID
-            LEFT JOIN instances iw ON iw.InstanceID = i.WorkflowInstanceId
-            WHERE i.ConstructID = :cid
-            ORDER BY i.StartDateTime DESC
+        SELECT
+            i.InstanceID,
+            i.ConstructID,
+            i.ConstructName,
+            i.StartDateTime,
+            i.EndDateTime,
+            ISNULL(i.Duration, DATEDIFF(SECOND, i.StartDateTime, i.EndDateTime)) AS DurationSeconds,
+            i.Status,
+            i.ResultCode,
+            i.ResultText,
+            i.AgentName,
+            iw.ConstructName AS Workflow,
+            ac.SuccessCount,
+            ac.FailureCount
+        FROM instances i
+        LEFT JOIN automateconstructs ac ON i.ConstructID = ac.ResourceID
+        LEFT JOIN instances iw
+          ON CONVERT(varchar(64), iw.InstanceID) = CONVERT(varchar(64), i.WorkflowInstanceId)
+        WHERE ac.ResourceType = 2
+          AND ac.CompletionState = 2
+          AND i.ConstructPath LIKE :ruta_procesos
+          AND LOWER(REPLACE(REPLACE(CONVERT(varchar(64), i.ConstructID), '{', ''), '}', '')) = :construct_id
+        ORDER BY i.StartDateTime DESC
         """
+
         with engine.connect() as conn:
-            rows = conn.execute(text(query), {"cid": construct_id})
+            rows = conn.execute(
+                text(query),
+                {
+                    "ruta_procesos": r"%\Procesos\%",
+                    "construct_id": construct_id_clean,
+                },
+            )
             results = [dict(row._mapping) for row in rows]
 
         return results
-
-    except Exception as e:
-        logging.exception("Error en /api/historial_construct")
+    except HTTPException:
+        raise
+    except Exception:
+        logging.exception("Error en /api/historial_construct/%s", construct_id)
         raise HTTPException(status_code=500, detail="Error interno del servidor")
+
+
+
 
 def get_instancias_actuales_snapshot():
     query = """
@@ -219,11 +293,6 @@ def get_instancias_actuales_snapshot():
         return [dict(r._mapping) for r in rows]
 
 
-@app.get("/api/instancias_actuales")
-async def instancias_actuales():
-    return get_instancias_actuales_snapshot()
-
-
 ###  WEBSOCKET  ###
 
 @app.websocket("/ws/instancias")
@@ -231,14 +300,14 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     clients.add(websocket)
 
-    # ✅ Enviar snapshot inicial al cliente
+    # âœ… Enviar snapshot inicial al cliente
     try:
         snapshot = get_instancias_actuales_snapshot()
         await websocket.send_text(json.dumps({
             "tipo": "snapshot",
             "items": snapshot
         }, default=str))
-        logging.info(f"📤 Snapshot enviado por WS: {len(snapshot)} items")
+        logging.info(f"ðŸ“¤ Snapshot enviado por WS: {len(snapshot)} items")
     except Exception:
         logging.exception("Error enviando snapshot al cliente WS")
 
@@ -249,7 +318,7 @@ async def websocket_endpoint(websocket: WebSocket):
         clients.discard(websocket)
 
 
-# === 🧠 Función para enviar a todos los clientes conectados ===
+# === ðŸ§  FunciÃ³n para enviar a todos los clientes conectados ===
 async def broadcast(message: dict):
     disconnected = []
     for ws in clients:
@@ -264,31 +333,56 @@ async def broadcast(message: dict):
 ### KAFKA LISTENER ###
 
 
-# Función para escuchar mensajes de Kafka y reenviar por WebSocket
+# FunciÃ³n para escuchar mensajes de Kafka y reenviar por WebSocket
 def kafka_listener():
-    consumer = KafkaConsumer(
+    global kafka_consumer
+    kafka_consumer = KafkaConsumer(
         'rpa-instance-summary',
         'rpa-execution-events',
         'instancias',
         bootstrap_servers=os.getenv("KAFKA_SERVER", "127.0.0.1:9092"),
         value_deserializer=lambda m: json.loads(m.decode('utf-8')),
         auto_offset_reset='latest',
-        group_id='rpa-dashboard'
+        group_id='rpa-dashboard',
+        consumer_timeout_ms=1000,
     )
 
-    logging.info("🟢 Backend escuchando Kafka...")
+    logging.info("Backend escuchando Kafka...")
 
-    for msg in consumer:
-        topic = msg.topic
-        data = msg.value
-        tipo = "summary" if topic == "rpa-instance-summary" else "event"
+    try:
+        while not stop_event.is_set():
+            for msg in kafka_consumer:
+                if stop_event.is_set():
+                    break
 
-        # Agregar campo para que el frontend lo identifique
-        data["tipo"] = tipo
+                topic = msg.topic
+                data = msg.value
+                tipo = "summary" if topic == "rpa-instance-summary" else "event"
 
-        if loop is not None:
-            asyncio.run_coroutine_threadsafe(broadcast(data), loop)
-        else:
-            logging.warning("Loop no inicializado aún; mensaje Kafka ignorado temporalmente")
+                # Agregar campo para que el frontend lo identifique
+                data["tipo"] = tipo
+
+                current_loop = loop
+                if current_loop is None or current_loop.is_closed():
+                    continue
+
+                coro = broadcast(data)
+                try:
+                    asyncio.run_coroutine_threadsafe(coro, current_loop)
+                except Exception:
+                    # Evita warning "coroutine was never awaited" si no se pudo agendar
+                    coro.close()
+                    if not stop_event.is_set():
+                        logging.exception("No se pudo programar broadcast en event loop")
+    except Exception:
+        if not stop_event.is_set():
+            logging.exception("Error en kafka_listener")
+    finally:
+        try:
+            if kafka_consumer is not None:
+                kafka_consumer.close()
+        except Exception:
+            logging.exception("Error cerrando Kafka consumer en listener")
+        kafka_consumer = None
 
 
