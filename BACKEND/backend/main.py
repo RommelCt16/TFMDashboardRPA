@@ -359,6 +359,19 @@ def kafka_listener():
                 data = msg.value
                 tipo = "summary" if topic == "rpa-instance-summary" else "event"
 
+                logging.info(
+                    "Kafka recibido | topic=%s partition=%s offset=%s key=%s",
+                    topic,
+                    msg.partition,
+                    msg.offset,
+                    msg.key.decode("utf-8", errors="ignore") if isinstance(msg.key, (bytes, bytearray)) else msg.key
+                )
+                logging.info(
+                    "Kafka payload | topic=%s data=%s",
+                    topic,
+                    json.dumps(data, default=str, ensure_ascii=False)
+                )
+
                 # Agregar campo para que el frontend lo identifique
                 data["tipo"] = tipo
 

@@ -156,12 +156,12 @@ function TaskDetailPage() {
 
   const eficienciaNota = useMemo(() => {
     if (eficienciaModo === "total") {
-      return "Total de Tareas";
+      return "Total de Procesos";
     }
     if (!mesSeleccionado) {
       return "Mes: no hay meses disponibles para calcular estadisticas.";
     }
-    return `Tareas del Mes ${formatMonthLabel(mesSeleccionado)}`;
+    return `Procesos del Mes ${formatMonthLabel(mesSeleccionado)}`;
   }, [eficienciaModo, mesSeleccionado]);
 
 

@@ -15,7 +15,7 @@ export default function HistoryCard({
       <div className="hsc__head">
         <div className="hsc__headLeft">
           <span className="material-symbols-outlined hsc__icon">timeline</span>
-          <h3 className="hsc__title">Historial de Duración</h3>
+          <h3 className="hsc__title">Historial de Procesos (Duración vs Hora de Ejecución)</h3>
         </div>
         <div className="hsc__hint">Haz clic en un punto para abrir el detalle (panel derecho).</div>
       </div>

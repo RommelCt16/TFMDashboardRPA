@@ -15,12 +15,26 @@ function getStartDate(task) {
 }
 
 function getLiveDurationSeconds(task, nowTs) {
-  const baseDuration = Number(task?.DurationSeconds);
-  const safeBaseDuration = Number.isFinite(baseDuration) ? baseDuration : null;
+  const baseDurationSeconds = Number(task?.DurationSeconds);
+  const baseDuration = Number(task?.Duration);
+  const safeBaseDuration = Number.isFinite(baseDurationSeconds)
+    ? baseDurationSeconds
+    : Number.isFinite(baseDuration)
+      ? baseDuration
+      : null;
   const statusCode = getTaskStatusCode(task);
 
   // Solo corre en vivo mientras la tarea sigue en ejecucion.
   if (statusCode !== 12) {
+    if (safeBaseDuration != null && safeBaseDuration > 0) {
+      return safeBaseDuration;
+    }
+
+    const startTs = new Date(getStartDate(task) || 0).getTime();
+    const endTs = new Date(task?.EndDateTime || 0).getTime();
+    if (Number.isFinite(startTs) && startTs > 0 && Number.isFinite(endTs) && endTs > startTs) {
+      return Math.floor((endTs - startTs) / 1000);
+    }
     return safeBaseDuration;
   }
 
@@ -183,6 +197,16 @@ function RunningTasksPage() {
     return d.toLocaleString();
   };
 
+  const shouldHideEndDate = (task, taskStatusCode, estadoClase) => {
+    if (taskStatusCode === 12 || estadoClase === "running") return true;
+    const rawEnd = String(task?.EndDateTime || "");
+    if (!rawEnd) return true;
+    if (rawEnd.startsWith("1900-01-01")) return true;
+    const endDate = new Date(rawEnd);
+    if (!Number.isNaN(endDate.getTime()) && endDate.getFullYear() <= 1901) return true;
+    return false;
+  };
+
   const formatDuration = (seconds) => {
     if (seconds == null) return "-";
     const sec = parseInt(seconds, 10);
@@ -342,15 +366,21 @@ function RunningTasksPage() {
                   )}
 
                   {pageTasks.map((t, idx) => {
-                    const estado = getEstadoInfo(getTaskStatusCode(t));
+                    const taskStatusCode = getTaskStatusCode(t);
+                    const estado = getEstadoInfo(taskStatusCode);
                     const rowNumber = (currentPage - 1) * PAGE_SIZE + idx + 1;
+                    const hideEndDate =
+                      statusFilter === DEFAULT_STATUS_FILTER ||
+                      shouldHideEndDate(t, taskStatusCode, estado.clase);
 
                     return (
                       <tr key={`${t.ConstructID}-${t.InstanceID}`}>
                         <td className="td-number">{rowNumber}</td>
                         <td className="td-text" title={t.ConstructName}>{t.ConstructName}</td>
                         <td className="td-text">{formatDate(getStartDate(t))}</td>
-                        <td className="td-text">{formatDate(t.EndDateTime)}</td>
+                        <td className={`td-text td-enddate ${hideEndDate ? "td-enddate-empty" : ""}`}>
+                          {hideEndDate ? "-" : formatDate(t.EndDateTime)}
+                        </td>
                         <td className="td-text">{formatDuration(getLiveDurationSeconds(t, nowTs))}</td>
                         <td className="td-status">
                           <span className={`status-badge status-${estado.clase}`}>{estado.texto}</span>

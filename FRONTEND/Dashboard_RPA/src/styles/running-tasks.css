@@ -284,6 +284,11 @@
   text-align: center;
 }
 
+.data-table th:nth-child(5),
+.data-table td:nth-child(5) {
+  text-align: center;
+}
+
 .data-table th:nth-child(1),
 .data-table td:nth-child(1) {
   width: 72px;
@@ -358,6 +363,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.td-enddate-empty {
+  text-align: center;
 }
 
 .td-status {

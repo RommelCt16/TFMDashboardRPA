@@ -51,7 +51,7 @@ export default function EventoSidebar({ collapsed, onToggle, detalleEvento, esta
 
                 <div className="res__rows">
                   <Row label="Estado Final" value={estadoLabel} />
-                  <Row label="Duracion Total" value={`${detalleEvento.duration.toFixed(1)} segundos`} />
+                  <Row label="Duración Total" value={`${detalleEvento.duration.toFixed(1)} segundos`} />
                   <Row label="Agente" value={detalleEvento.agente} />
                   <Row label="Inicio" value={detalleEvento.time?.toLocaleString?.() ?? "-"} />
                   <Row label="Fin" value={detalleEvento.fin ? detalleEvento.fin.toLocaleString() : "-"} />

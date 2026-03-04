@@ -103,7 +103,7 @@ export function renderLineChart(
     .attr("y", -50)
     .attr("fill", "currentColor")
     .attr("text-anchor", "middle")
-    .text("Duracion (segundos)");
+    .text("Duración (segundos)");
 
   const line = d3
     .line()
